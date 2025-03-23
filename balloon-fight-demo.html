@@ -1,0 +1,1161 @@
+<!doctype html>
+<html>
+    <head>
+        <title>3D Balloon Fight Physics Demo</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+            }
+            canvas {
+                display: block;
+            }
+            #info {
+                position: absolute;
+                top: 10px;
+                width: 100%;
+                text-align: center;
+                color: white;
+                font-family: Arial, sans-serif;
+                pointer-events: none;
+            }
+            #controls {
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                color: white;
+                font-family: Arial, sans-serif;
+                background-color: rgba(0, 0, 0, 0.5);
+                padding: 10px;
+                border-radius: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="info">3D Balloon Fight Physics Demo</div>
+        <div id="controls">
+            Controls: WASD = Move, Tap Space repeatedly to Flap, R = Release a
+            balloon, P = Pop a balloon, Q/E = Rotate camera, Mouse wheel = Zoom
+            in/out<br />
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        <script>
+            // Three.js setup
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // Sky blue background
+            // Camera variables
+            let yaw = 0; // Horizontal rotation (left-right)
+            let pitch = 0; // Vertical rotation (up-down)
+            const mouseSensitivity = 0.002; // Adjustable sensitivity
+            let isPointerLocked = false;
+            let keysPressed = {
+                q: false, // Rotate camera left
+                e: false, // Rotate camera right
+            };
+
+            // Set up camera
+            const camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000,
+            );
+            camera.position.set(0, 5, 10); // Start slightly above and behind player
+            scene.add(camera); // Add camera to scene instead of positioning it manually
+
+            const renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Create ground - much larger to ensure visibility
+            const groundSize = 500; // Much larger ground
+            const groundGeometry = new THREE.PlaneGeometry(
+                groundSize,
+                groundSize,
+            );
+            const groundMaterial = new THREE.MeshLambertMaterial({
+                color: 0x228b22,
+            }); // Forest green
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = 0; // At y=0 so player stands on it
+            scene.add(ground);
+
+            // Add grid on ground for better visibility
+            const gridHelper = new THREE.GridHelper(
+                groundSize,
+                50,
+                0x000000,
+                0x555555,
+            );
+            gridHelper.position.y = 0.01; // Slightly above ground to prevent z-fighting
+            scene.add(gridHelper);
+
+            // Add boundary markers to make the edges visible
+            const createBoundaryMarker = (x, z, color) => {
+                const markerGeometry = new THREE.BoxGeometry(2, 10, 2);
+                const markerMaterial = new THREE.MeshLambertMaterial({
+                    color: color,
+                });
+                const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+                marker.position.set(x, 3, z);
+                scene.add(marker);
+            };
+
+            // Add boundary markers at the corners - farther out
+            createBoundaryMarker(200, 200, 0xff0000); // Red corner
+            createBoundaryMarker(-200, 200, 0xff0000); // Red corner
+            createBoundaryMarker(200, -200, 0xff0000); // Red corner
+            createBoundaryMarker(-200, -200, 0xff0000); // Red corner
+
+            // Water surface - also much larger
+            const waterGeometry = new THREE.PlaneGeometry(
+                groundSize,
+                groundSize / 2,
+            );
+            const waterMaterial = new THREE.MeshLambertMaterial({
+                color: 0x4444ff,
+                transparent: true,
+                opacity: 0.7,
+            });
+            const water = new THREE.Mesh(waterGeometry, waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            water.position.z = groundSize / 4;
+            water.position.y = 0.1; // Slightly above ground
+            scene.add(water);
+
+            // Add these to your scene creation code after creating the ground
+
+            // Create floating platforms at different heights
+            function createFloatingPlatform(x, y, z, width, depth) {
+                const platformGeometry = new THREE.BoxGeometry(width, 1, depth);
+                const platformMaterial = new THREE.MeshLambertMaterial({
+                    color: 0x8b4513,
+                }); // Brown wood color
+                const platform = new THREE.Mesh(
+                    platformGeometry,
+                    platformMaterial,
+                );
+                platform.position.set(x, y, z);
+                scene.add(platform);
+
+                // Add a colorful edge to make height more visible
+                const edgeGeometry = new THREE.BoxGeometry(width, 0.2, depth);
+                const edgeMaterial = new THREE.MeshLambertMaterial({
+                    color: 0xffff00,
+                }); // Yellow edge
+                const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+                edge.position.y = 0.6; // Position on top of platform
+                platform.add(edge);
+
+                return platform;
+            }
+
+            // Create some platforms at different heights
+            const platforms = [
+                createFloatingPlatform(30, 15, -20, 20, 5),
+                createFloatingPlatform(-25, 30, -10, 15, 5),
+                createFloatingPlatform(0, 45, -30, 25, 5),
+                createFloatingPlatform(-40, 60, 10, 15, 5),
+                createFloatingPlatform(50, 75, 0, 20, 5),
+            ];
+
+            // Add some distant mountains for depth perception
+            function createDistantMountain(x, y, z, height, radius, color) {
+                const mountainGeometry = new THREE.ConeGeometry(
+                    radius,
+                    height,
+                    8,
+                );
+                const mountainMaterial = new THREE.MeshLambertMaterial({
+                    color: color,
+                });
+                const mountain = new THREE.Mesh(
+                    mountainGeometry,
+                    mountainMaterial,
+                );
+                mountain.position.set(x, y, z);
+                scene.add(mountain);
+            }
+
+            // Create background mountains at different distances - fixed code
+            createDistantMountain(-200, 150, -300, 300, 100, 0x6b8e23); // Olive green
+            createDistantMountain(250, 180, -350, 360, 120, 0x556b2f); // Darker green
+            createDistantMountain(0, 200, -400, 400, 150, 0x2f4f4f); // Dark slate gray
+
+            // Add clouds at different heights to help with altitude perception
+            function createCloud(x, y, z) {
+                const cloud = new THREE.Group();
+                const cloudMaterial = new THREE.MeshLambertMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.8,
+                });
+
+                // Create several spheres to form a cloud
+                for (let i = 0; i < 5; i++) {
+                    const radius = 2 + Math.random() * 2;
+                    const cloudPartGeometry = new THREE.SphereGeometry(
+                        radius,
+                        8,
+                        8,
+                    );
+                    const cloudPart = new THREE.Mesh(
+                        cloudPartGeometry,
+                        cloudMaterial,
+                    );
+
+                    // Position each part randomly within a small area
+                    cloudPart.position.set(
+                        (Math.random() - 0.5) * 5,
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 5,
+                    );
+                    cloud.add(cloudPart);
+                }
+
+                cloud.position.set(x, y, z);
+                scene.add(cloud);
+
+                return cloud;
+            }
+
+            // Create clouds at regular height intervals to help gauge altitude
+            const heightMarkerClouds = [];
+            for (let height = 10; height <= 100; height += 15) {
+                // Create clouds at different positions for each height
+                heightMarkerClouds.push(
+                    createCloud(-50, height, Math.random() * 50 - 25),
+                    createCloud(50, height, Math.random() * 50 - 25),
+                );
+            }
+
+            // Add horizontal stripes to mountains at regular intervals
+            function createHeightMarkers() {
+                for (let height = 10; height <= 100; height += 10) {
+                    // Create lines instead of rings
+                    const lineGeometry = new THREE.BufferGeometry();
+                    const lineMaterial = new THREE.LineBasicMaterial({
+                        color: height % 20 === 0 ? 0xff0000 : 0xffffff, // Red for every 20 units
+                        linewidth: 2, // Note: linewidth > 1 only works in some browsers
+                    });
+
+                    // Create points for a square at this height
+                    const size = 250;
+                    const points = [
+                        new THREE.Vector3(-size, height, -size),
+                        new THREE.Vector3(size, height, -size),
+                        new THREE.Vector3(size, height, size),
+                        new THREE.Vector3(-size, height, size),
+                        new THREE.Vector3(-size, height, -size),
+                    ];
+
+                    lineGeometry.setFromPoints(points);
+                    const line = new THREE.Line(lineGeometry, lineMaterial);
+                    scene.add(line);
+                }
+            }
+
+            // Collision detection using bounding boxes
+            function checkCollision(object1, object2) {
+                // Create bounding boxes for the objects
+                const box1 = new THREE.Box3().setFromObject(object1);
+                const box2 = new THREE.Box3().setFromObject(object2);
+
+                // Check for intersection
+                return box1.intersectsBox(box2);
+            }
+
+            // Platform collision handling - improved version
+            function handlePlatformCollisions() {
+                // Create player bounding box once
+                const playerBox = new THREE.Box3().setFromObject(playerBody);
+                let onPlatform = false;
+                const playerFeet = playerBody.position.y - 1; // Position of player's feet
+
+                for (const platform of platforms) {
+                    // Create platform bounding box
+                    const platformBox = new THREE.Box3().setFromObject(
+                        platform,
+                    );
+
+                    // Check if player is within XZ boundaries of platform
+                    if (
+                        playerBox.min.x <= platformBox.max.x &&
+                        playerBox.max.x >= platformBox.min.x &&
+                        playerBox.min.z <= platformBox.max.z &&
+                        playerBox.max.z >= platformBox.min.z
+                    ) {
+                        // Calculate vertical distances
+                        const playerBottom = playerBox.min.y;
+                        const platformTop = platformBox.max.y;
+                        const platformBottom = platformBox.min.y;
+
+                        // Landing on top of platform
+                        if (
+                            playerBottom <= platformTop + 0.2 && // Small tolerance
+                            playerFeet >= platformTop - 0.2 &&
+                            playerVelocity.y <= 0
+                        ) {
+                            playerBody.position.y = platformTop + 1; // 1 = half height of player
+                            playerVelocity.y = 0;
+                            onPlatform = true;
+                        }
+                        // Hitting bottom of platform
+                        else if (
+                            playerBox.max.y >= platformBottom - 0.2 &&
+                            playerBox.max.y <= platformBottom + 0.5 &&
+                            playerVelocity.y > 0
+                        ) {
+                            playerBody.position.y = platformBottom - 2; // 2 = player height
+                            playerVelocity.y = 0;
+                        }
+                        // Side collisions
+                        else if (
+                            playerBox.min.y < platformBox.max.y &&
+                            playerBox.max.y > platformBox.min.y
+                        ) {
+                            // Determine which side was hit by comparing centers
+                            const playerCenter = new THREE.Vector2(
+                                (playerBox.min.x + playerBox.max.x) / 2,
+                                (playerBox.min.z + playerBox.max.z) / 2,
+                            );
+                            const platformCenter = new THREE.Vector2(
+                                (platformBox.min.x + platformBox.max.x) / 2,
+                                (platformBox.min.z + platformBox.max.z) / 2,
+                            );
+
+                            const dx = playerCenter.x - platformCenter.x;
+                            const dz = playerCenter.y - platformCenter.y; // Using y for 2D vector's z
+
+                            // Find penetration depths
+                            let penetrationX = 0;
+                            let penetrationZ = 0;
+
+                            if (dx > 0) {
+                                // Right side collision
+                                penetrationX =
+                                    platformBox.max.x - playerBox.min.x;
+                            } else {
+                                // Left side collision
+                                penetrationX =
+                                    platformBox.min.x - playerBox.max.x;
+                            }
+
+                            if (dz > 0) {
+                                // Far side collision
+                                penetrationZ =
+                                    platformBox.max.z - playerBox.min.z;
+                            } else {
+                                // Near side collision
+                                penetrationZ =
+                                    platformBox.min.z - playerBox.max.z;
+                            }
+
+                            // Push out in direction of smallest penetration
+                            if (
+                                Math.abs(penetrationX) < Math.abs(penetrationZ)
+                            ) {
+                                playerBody.position.x += penetrationX;
+                                playerVelocity.x = 0;
+                            } else {
+                                playerBody.position.z += penetrationZ;
+                                playerVelocity.z = 0;
+                            }
+                        }
+                    }
+                }
+
+                return onPlatform;
+            }
+
+            function updateCollisions() {
+                // Ground collision with proper offset
+                if (playerBody.position.y < 1) {
+                    // 1 is half height of player
+                    playerBody.position.y = 1;
+                    playerVelocity.y = 0;
+                }
+
+                // Check platform collisions
+                const onPlatform = handlePlatformCollisions();
+
+                // Update water collision with proper physics
+                if (playerBody.position.z > 0 && playerBody.position.y < 1.2) {
+                    // Water "pushes" player up slightly
+                    playerBody.position.y = Math.max(
+                        playerBody.position.y,
+                        1.2,
+                    );
+
+                    // Apply water resistance - stronger than air
+                    playerVelocity.multiplyScalar(0.92);
+
+                    // Apply small upward force (buoyancy)
+                    playerVelocity.y += 0.005;
+                }
+
+                // World boundaries with proper bounce
+                const BOUNDARY_X = 200;
+                const BOUNDARY_Z = 200;
+                const BOUNCE_FACTOR = 0.3; // Bounce back with 30% of velocity
+
+                if (playerBody.position.x < -BOUNDARY_X) {
+                    playerBody.position.x = -BOUNDARY_X;
+                    playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR; // Bounce
+                } else if (playerBody.position.x > BOUNDARY_X) {
+                    playerBody.position.x = BOUNDARY_X;
+                    playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR; // Bounce
+                }
+
+                if (playerBody.position.z < -BOUNDARY_Z) {
+                    playerBody.position.z = -BOUNDARY_Z;
+                    playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR; // Bounce
+                } else if (playerBody.position.z > BOUNDARY_Z) {
+                    playerBody.position.z = BOUNDARY_Z;
+                    playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR; // Bounce
+                }
+
+                return onPlatform;
+            }
+
+            createHeightMarkers();
+
+            // Player character - start higher up
+            const playerBody = new THREE.Group();
+            playerBody.position.y = 10; // Start higher up to show floating down
+            scene.add(playerBody);
+
+            // Player's actual body (cylinder)
+            const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
+            const bodyMaterial = new THREE.MeshLambertMaterial({
+                color: 0xff0000,
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1;
+            playerBody.add(body);
+
+            // Player's head (sphere)
+            const headGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const headMaterial = new THREE.MeshLambertMaterial({
+                color: 0xffcc99,
+            });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 2.5;
+            playerBody.add(head);
+
+            // Arms
+            const armGeometry = new THREE.CylinderGeometry(0.2, 0.2, 1, 8);
+            const armMaterial = new THREE.MeshLambertMaterial({
+                color: 0xff0000,
+            });
+
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.position.set(-0.8, 1.5, 0);
+            leftArm.rotation.z = Math.PI / 4;
+            playerBody.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.position.set(0.8, 1.5, 0);
+            rightArm.rotation.z = -Math.PI / 4;
+            playerBody.add(rightArm);
+
+            // Create cone geometry for the legs
+            const legGeometry = new THREE.ConeGeometry(0.25, 1, 4);
+            const legMaterial = new THREE.MeshLambertMaterial({
+                color: 0x0000ff,
+            });
+
+            const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+            leftLeg.position.set(-0.3, 0, 0);
+            playerBody.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+            rightLeg.position.set(0.3, 0, 0);
+            playerBody.add(rightLeg);
+
+            // Create shadow mesh
+            const shadowGeometry = new THREE.CircleGeometry(1.5, 32); // Radius of 1, adjustable
+            const shadowMaterial = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1,
+            });
+            const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
+            shadow.rotation.x = -Math.PI / 2; // Lay flat on the ground
+            shadow.position.y = 0.01; // Slightly above ground to avoid z-fighting
+            scene.add(shadow);
+
+            // Balloons
+            const balloons = [];
+            const balloonGeometry = new THREE.SphereGeometry(0.6, 16, 16);
+            const createBalloon = (x, y, z, color) => {
+                const balloonMaterial = new THREE.MeshLambertMaterial({
+                    color: color,
+                });
+                const balloon = new THREE.Mesh(
+                    balloonGeometry,
+                    balloonMaterial,
+                );
+                balloon.position.set(x, y, z);
+
+                // String (line)
+                const stringGeometry = new THREE.BufferGeometry().setFromPoints(
+                    [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1.5, 0)],
+                );
+                const stringMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffffff,
+                });
+                const string = new THREE.Line(stringGeometry, stringMaterial);
+                balloon.add(string);
+
+                playerBody.add(balloon);
+                balloons.push(balloon);
+                return balloon;
+            };
+
+            const balloon1 = createBalloon(-1, 4, 0, 0xff0000); // Red
+            const balloon2 = createBalloon(1, 4, 0, 0x0000ff); // Blue
+            const balloon3 = createBalloon(0, 4.5, 0, 0x00ff00); // Green
+
+            // Physics variables
+            let playerVelocity = new THREE.Vector3(0, 0, 0);
+            const GRAVITY = 0.015; // Increased gravity to ensure falling
+            const BALLOON_BUOYANCY = 0.009; // Reduced buoyancy - should slow fall but not cause rising
+            const MAX_VELOCITY = 0.3; // Same maximum movement speed
+            const AIR_RESISTANCE = 0.98; // Slightly increased air resistance for better control
+            const FLAP_FORCE = 0.13; // Increased flap force - need more power to rise
+            const FLAP_COOLDOWN = 8; // Reduced cooldown for more rapid flapping
+            const MOVEMENT_FORCE = 0.015; // Same movement acceleration
+
+            // Movement control flags
+            const keys = {
+                w: false,
+                a: false,
+                s: false,
+                d: false,
+                space: false,
+            };
+
+            // Key down event
+            window.addEventListener("keydown", (event) => {
+                switch (event.key.toLowerCase()) {
+                    case "w":
+                        keys.w = true;
+                        break;
+                    case "a":
+                        keys.a = true;
+                        break;
+                    case "s":
+                        keys.s = true;
+                        break;
+                    case "d":
+                        keys.d = true;
+                        break;
+                    case " ":
+                        keys.space = true;
+                        break;
+                    case "r": // Release a balloon (player control)
+                        releaseBalloon();
+                        break;
+                    case "p": // Pop a balloon (for testing)
+                        popBalloon();
+                        break;
+                    case "q":
+                        keysPressed.q = true;
+                        break;
+                    case "e":
+                        keysPressed.e = true;
+                        break;
+                }
+            });
+
+            // Key up event
+            window.addEventListener("keyup", (event) => {
+                switch (event.key.toLowerCase()) {
+                    case "w":
+                        keys.w = false;
+                        break;
+                    case "a":
+                        keys.a = false;
+                        break;
+                    case "s":
+                        keys.s = false;
+                        break;
+                    case "d":
+                        keys.d = false;
+                        break;
+                    case " ":
+                        keys.space = false;
+                        break;
+                    case "q":
+                        keysPressed.q = false;
+                        break;
+                    case "e":
+                        keysPressed.e = false;
+                        break;
+                }
+            });
+
+            // Add this to handle both trackpad pinch-zoom and mouse wheel
+            window.addEventListener(
+                "wheel",
+                (event) => {
+                    // Prevent default browser zooming
+                    event.preventDefault();
+
+                    // Adjust camera distance based on scroll direction
+                    cameraDistance += event.deltaY * 0.05;
+
+                    // Limit how close and far the camera can be
+                    cameraDistance = Math.max(5, Math.min(50, cameraDistance));
+                },
+                { passive: false },
+            );
+
+            // Handle trackpad pinch-to-zoom gestures
+            let initialTouchDistance = 0;
+
+            window.addEventListener("touchstart", (event) => {
+                if (event.touches.length === 2) {
+                    // Two fingers are touching the screen
+                    initialTouchDistance = getTouchDistance(event.touches);
+                }
+            });
+
+            window.addEventListener("touchmove", (event) => {
+                if (event.touches.length === 2) {
+                    // Two fingers are moving on the screen
+                    const currentDistance = getTouchDistance(event.touches);
+                    const deltaDistance =
+                        initialTouchDistance - currentDistance;
+
+                    // Adjust camera distance based on pinch movement
+                    cameraDistance += deltaDistance * 0.05;
+                    cameraDistance = Math.max(5, Math.min(50, cameraDistance));
+
+                    // Update initial distance for next move
+                    initialTouchDistance = currentDistance;
+
+                    // Prevent default behavior like page zooming
+                    event.preventDefault();
+                }
+            });
+
+            // Helper function to calculate distance between two touch points
+            function getTouchDistance(touches) {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            function setupPointerLock() {
+                renderer.domElement.addEventListener("click", () => {
+                    if (!isPointerLocked) {
+                        renderer.domElement.requestPointerLock();
+                    }
+                });
+
+                document.addEventListener("pointerlockchange", () => {
+                    isPointerLocked =
+                        document.pointerLockElement === renderer.domElement;
+                    const infoElement = document.getElementById("info");
+                    if (isPointerLocked) {
+                        infoElement.textContent =
+                            "3D Balloon Fight Physics Demo - Press ESC to release mouse";
+                        document.addEventListener("mousemove", onMouseMove);
+                    } else {
+                        infoElement.textContent =
+                            "3D Balloon Fight Physics Demo - Click to control camera";
+                        document.removeEventListener("mousemove", onMouseMove);
+                    }
+                });
+
+                window.addEventListener("keydown", (event) => {
+                    if (event.key === "Escape" && isPointerLocked) {
+                        document.exitPointerLock();
+                    }
+                });
+            }
+
+            function onMouseMove(event) {
+                if (isPointerLocked) {
+                    yaw -= event.movementX * mouseSensitivity;
+                    pitch -= event.movementY * mouseSensitivity;
+
+                    // Clamp pitch to prevent flipping (e.g., -90° to 90° in radians)
+                    pitch = Math.max(
+                        -Math.PI / 2,
+                        Math.min(Math.PI / 2, pitch),
+                    );
+                }
+            }
+
+            // Call this function to set up pointer lock
+            setupPointerLock();
+
+            // Add an escape key handler to exit pointer lock mode
+            window.addEventListener("keydown", (event) => {
+                if (event.key === "Escape" && isPointerLocked) {
+                    document.exitPointerLock();
+                }
+            });
+
+            function popBalloon() {
+                if (balloons.length > 0) {
+                    try {
+                        const balloon = balloons.pop();
+                        playerBody.remove(balloon);
+
+                        // Create pop effect (particle burst)
+                        createPopEffect(balloon.position);
+
+                        // Play pop sound
+                        // playSound("balloon_pop", 0.4);
+
+                        // Optional: Add temporary invincibility after losing a balloon
+                        playerInvincibilityTime = 60; // 60 frames of invincibility
+                    } catch (error) {
+                        console.error("Error in popBalloon:", error);
+                    }
+                }
+            }
+
+            // Helper function for creating pop visual effect
+            function createPopEffect(position) {
+                // Create a simple particle burst
+                const particleCount = 20;
+                const particles = new THREE.Group();
+                scene.add(particles);
+
+                for (let i = 0; i < particleCount; i++) {
+                    const particle = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.1, 4, 4),
+                        new THREE.MeshBasicMaterial({
+                            color: 0xff0000, // Red particles
+                            transparent: true,
+                            opacity: 1.0,
+                        }),
+                    );
+
+                    // Position at balloon position
+                    particle.position.copy(position);
+
+                    // Give random velocity
+                    particle.userData.velocity = new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.2,
+                        (Math.random() - 0.5) * 0.2,
+                        (Math.random() - 0.5) * 0.2,
+                    );
+
+                    particle.userData.lifetime = 30 + Math.random() * 30; // Frames of lifetime
+
+                    particles.add(particle);
+                }
+
+                // Add to a list to update
+                popEffects.push({
+                    particles: particles,
+                    age: 0,
+                });
+            }
+
+            // Make sure you have this array defined:
+            const popEffects = [];
+
+            // Function to release a balloon
+            function releaseBalloon() {
+                // Make sure player has at least one balloon
+                if (balloons.length > 0) {
+                    // Get the last balloon in the array
+                    const releasedBalloon = balloons.pop();
+
+                    // Remove balloon from player
+                    playerBody.remove(releasedBalloon);
+
+                    // Add balloon to scene as a separate object
+                    scene.add(releasedBalloon);
+
+                    // Set balloon's position in world space
+                    releasedBalloon.position.copy(
+                        new THREE.Vector3(
+                            playerBody.position.x + releasedBalloon.position.x,
+                            playerBody.position.y + releasedBalloon.position.y,
+                            playerBody.position.z + releasedBalloon.position.z,
+                        ),
+                    );
+
+                    // Give the released balloon some velocity
+                    releasedBalloon.userData.velocity = new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.05, // Small random X velocity
+                        0.1 + Math.random() * 0.05, // Upward Y velocity
+                        (Math.random() - 0.5) * 0.05, // Small random Z velocity
+                    );
+
+                    // Add balloon to a list of released balloons to update
+                    releasedBalloons.push(releasedBalloon);
+
+                    // Play a balloon release sound
+                    const releaseSound = new Audio("path/to/pop-sound.mp3"); // Add a sound file
+                    releaseSound.volume = 0.3;
+                    releaseSound.play();
+
+                    // Update physics behavior based on new balloon count
+                    console.log(
+                        `Released a balloon! ${balloons.length} balloons remaining.`,
+                    );
+                }
+            }
+
+            // Array to track released balloons
+            const releasedBalloons = [];
+
+            // Detached balloons list
+            const detachedBalloons = [];
+
+            // Flapping animation state
+            let flapTime = 0;
+            let isFlapping = false;
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // Calculate buoyancy based on number of balloons
+                const buoyancy = BALLOON_BUOYANCY * balloons.length;
+
+                // Apply gravity and buoyancy - ensure net downward force
+                playerVelocity.y -= GRAVITY;
+                playerVelocity.y += buoyancy;
+
+                // Ensure player always falls slightly when not flapping
+                if (!isFlapping && playerVelocity.y > 0.01) {
+                    playerVelocity.y *= 0.9; // Dampen upward velocity
+                }
+
+                // Flap/Jump - balloon fight style rapid tapping
+                if (keys.space && !isFlapping) {
+                    playerVelocity.y += FLAP_FORCE;
+                    isFlapping = true;
+                    flapTime = 0;
+
+                    // Animate arms flapping
+                    leftArm.rotation.z = Math.PI / 2;
+                    rightArm.rotation.z = -Math.PI / 2;
+                }
+
+                // Make flapping reset faster to allow rapid flapping like in original game
+                if (isFlapping) {
+                    flapTime += 2;
+                    if (flapTime > FLAP_COOLDOWN) {
+                        isFlapping = false;
+                        leftArm.rotation.z = Math.PI / 4;
+                        rightArm.rotation.z = -Math.PI / 4;
+                    }
+                }
+
+                // Flap animation reset - faster to allow rapid flapping
+                if (isFlapping) {
+                    if (flapTime > 10) {
+                        // Shorter flap animation
+                        isFlapping = false;
+                        leftArm.rotation.z = Math.PI / 4;
+                        rightArm.rotation.z = -Math.PI / 4;
+                    }
+                }
+
+                // Movement controls aligned with camera direction when pointer locked
+                if (isPointerLocked) {
+                    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+                        camera.quaternion,
+                    );
+                    forward.y = 0; // Keep movement horizontal
+                    forward.normalize();
+                    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(
+                        camera.quaternion,
+                    );
+                    right.y = 0;
+                    right.normalize();
+
+                    if (keys.w)
+                        playerVelocity.add(
+                            forward.multiplyScalar(MOVEMENT_FORCE),
+                        );
+                    if (keys.s)
+                        playerVelocity.add(
+                            forward.multiplyScalar(-MOVEMENT_FORCE),
+                        );
+                    if (keys.a)
+                        playerVelocity.add(
+                            right.multiplyScalar(-MOVEMENT_FORCE),
+                        );
+                    if (keys.d)
+                        playerVelocity.add(
+                            right.multiplyScalar(MOVEMENT_FORCE),
+                        );
+                } else {
+                    // Fallback movement when not locked
+                    if (keys.w) playerVelocity.z -= MOVEMENT_FORCE;
+                    if (keys.s) playerVelocity.z += MOVEMENT_FORCE;
+                    if (keys.a) playerVelocity.x -= MOVEMENT_FORCE;
+                    if (keys.d) playerVelocity.x += MOVEMENT_FORCE;
+                }
+
+                // Apply air resistance
+                playerVelocity.multiplyScalar(AIR_RESISTANCE);
+
+                // Limit maximum velocity
+                if (playerVelocity.length() > MAX_VELOCITY) {
+                    playerVelocity.normalize().multiplyScalar(MAX_VELOCITY);
+                }
+
+                // Update player position
+                playerBody.position.add(playerVelocity);
+
+                // Ground collision
+                if (playerBody.position.y < 0) {
+                    playerBody.position.y = 1; //Offset for legs
+                    playerVelocity.y = 0;
+                }
+
+                // Water collision (bounce and slow down)
+                if (
+                    playerBody.position.z > 0 &&
+                    playerBody.position.y < 0.2 + 1
+                ) {
+                    // Adjusted for leg height
+                    playerBody.position.y = 0.2 + 1; // Offset by leg height
+                    playerVelocity.y = Math.abs(playerVelocity.y) * 0.5;
+                    playerVelocity.x *= 0.9;
+                    playerVelocity.z *= 0.9;
+                }
+
+                // Platform collision
+                let onPlatform = false;
+
+                // Find your platform collision code and replace it with this improved version
+                for (const platform of platforms) {
+                    const pos = platform.position;
+                    const width = platform.geometry.parameters.width;
+                    const depth = platform.geometry.parameters.depth;
+                    const height = platform.geometry.parameters.height || 1;
+
+                    const halfWidth = width / 2;
+                    const halfDepth = depth / 2;
+                    const halfHeight = height / 2;
+
+                    // Check if player is within XZ bounds
+                    if (
+                        playerBody.position.x >= pos.x - halfWidth &&
+                        playerBody.position.x <= pos.x + halfWidth &&
+                        playerBody.position.z >= pos.z - halfDepth &&
+                        playerBody.position.z <= pos.z + halfDepth
+                    ) {
+                        // Top collision (landing)
+                        if (
+                            playerBody.position.y > pos.y + halfHeight &&
+                            playerBody.position.y < pos.y + halfHeight + 2 &&
+                            playerVelocity.y < 0
+                        ) {
+                            playerBody.position.y = pos.y + halfHeight + 1;
+                            playerVelocity.y = 0;
+                        }
+                        // Bottom collision
+                        else if (
+                            playerBody.position.y < pos.y - halfHeight &&
+                            playerBody.position.y > pos.y - halfHeight - 2 &&
+                            playerVelocity.y > 0
+                        ) {
+                            playerBody.position.y = pos.y - halfHeight - 1;
+                            playerVelocity.y = 0;
+                        }
+                        // Side collision
+                        else if (
+                            playerBody.position.y <= pos.y + halfHeight + 1 &&
+                            playerBody.position.y >= pos.y - halfHeight - 1
+                        ) {
+                            const dx = playerBody.position.x - pos.x;
+                            const dz = playerBody.position.z - pos.z;
+
+                            if (
+                                Math.abs(dx / halfWidth) >
+                                Math.abs(dz / halfDepth)
+                            ) {
+                                // X-axis collision
+                                playerBody.position.x =
+                                    pos.x +
+                                    (dx > 0 ? halfWidth + 1 : -halfWidth - 1);
+                                playerVelocity.x = 0;
+                            } else {
+                                // Z-axis collision
+                                playerBody.position.z =
+                                    pos.z +
+                                    (dz > 0 ? halfDepth + 1 : -halfDepth - 1);
+                                playerVelocity.z = 0;
+                            }
+                        }
+                    }
+                }
+
+                // World boundaries - prevent falling off the map
+                const BOUNDARY_X = 200;
+                const BOUNDARY_Z = 200;
+
+                // X-axis boundaries
+                if (playerBody.position.x < -BOUNDARY_X) {
+                    playerBody.position.x = -BOUNDARY_X;
+                    playerVelocity.x = 0;
+                } else if (playerBody.position.x > BOUNDARY_X) {
+                    playerBody.position.x = BOUNDARY_X;
+                    playerVelocity.x = 0;
+                }
+
+                // Z-axis boundaries
+                if (playerBody.position.z < -BOUNDARY_Z) {
+                    playerBody.position.z = -BOUNDARY_Z;
+                    playerVelocity.z = 0;
+                } else if (playerBody.position.z > BOUNDARY_Z) {
+                    playerBody.position.z = BOUNDARY_Z;
+                    playerVelocity.z = 0;
+                }
+
+                // Update detached balloons
+                for (let i = detachedBalloons.length - 1; i >= 0; i--) {
+                    const balloon = detachedBalloons[i];
+                    balloon.position.add(balloon.userData.velocity);
+                    balloon.userData.velocity.y += 0.001;
+                    if (balloon.position.y > 50) {
+                        scene.remove(balloon);
+                        detachedBalloons.splice(i, 1);
+                    }
+                }
+
+                // Update shadow position
+                shadow.position.x = playerBody.position.x;
+                shadow.position.z = playerBody.position.z;
+                shadow.position.y = 0.01; // Default to ground
+
+                // Sync shadow with platform if player is above one
+                for (const platform of platforms) {
+                    const px = platform.position.x;
+                    const py = platform.position.y;
+                    const pz = platform.position.z;
+                    const width = platform.geometry.parameters.width;
+                    const depth = platform.geometry.parameters.depth;
+                    const halfHeight =
+                        platform.geometry.parameters.height / 2 || 0.5;
+
+                    if (
+                        playerBody.position.x >= px - width / 2 &&
+                        playerBody.position.x <= px + width / 2 &&
+                        playerBody.position.z >= pz - depth / 2 &&
+                        playerBody.position.z <= pz + depth / 2 &&
+                        playerBody.position.y > py // Player is above platform
+                    ) {
+                        shadow.position.y = 0.01; // Shadow on platform surface
+                        console.log(
+                            "Shadow on platform at y =",
+                            shadow.position.y,
+                        ); // Debug log
+                        break;
+                    }
+                }
+
+                // Dynamic shadow size and opacity
+                const heightAboveGround =
+                    playerBody.position.y - shadow.position.y;
+                const scale = Math.max(0.5, 1 - heightAboveGround * 0.02);
+                shadow.scale.set(scale, scale, 1);
+                shadow.material.opacity = Math.max(
+                    0.1,
+                    0.5 - heightAboveGround * 0.01,
+                );
+
+                // Update pop effects
+                for (let i = popEffects.length - 1; i >= 0; i--) {
+                    const effect = popEffects[i];
+                    effect.age++;
+
+                    // Update all particles in this effect
+                    effect.particles.children.forEach((particle) => {
+                        particle.position.add(particle.userData.velocity);
+                        particle.userData.velocity.y -= 0.001; // Add gravity to particles
+                        particle.userData.lifetime--;
+
+                        // Fade out particle
+                        if (particle.material.opacity) {
+                            particle.material.opacity =
+                                particle.userData.lifetime / 60;
+                        }
+                    });
+
+                    // Remove effect when all particles are gone
+                    if (effect.age > 60) {
+                        scene.remove(effect.particles);
+                        popEffects.splice(i, 1);
+                    }
+                }
+
+                // Update released balloons
+                for (let i = releasedBalloons.length - 1; i >= 0; i--) {
+                    const balloon = releasedBalloons[i];
+
+                    // Update balloon position based on its velocity
+                    balloon.position.add(balloon.userData.velocity);
+
+                    // Make the balloon rise and wobble a bit
+                    balloon.userData.velocity.y += 0.001;
+                    balloon.userData.velocity.x +=
+                        (Math.random() - 0.5) * 0.001;
+                    balloon.userData.velocity.z +=
+                        (Math.random() - 0.5) * 0.001;
+
+                    // Rotate the balloon slightly for visual effect
+                    balloon.rotation.y += 0.01;
+
+                    // Remove balloons that go too high
+                    if (balloon.position.y > 200) {
+                        scene.remove(balloon);
+                        releasedBalloons.splice(i, 1);
+                    }
+                }
+
+                // Update camera position and orientation
+                camera.position.copy(playerBody.position);
+                camera.position.y += 3;
+                camera.position.z += 10;
+
+                // Apply yaw and pitch rotations
+                camera.rotation.order = "YXZ";
+                camera.rotation.y = yaw;
+                camera.rotation.x = pitch;
+
+                renderer.render(scene, camera);
+            }
+
+            // Move window resize listener outside animate (only needs to be added once)
+            window.addEventListener("resize", () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Start the animation
+            animate();
+        </script>
+    </body>
+</html>
