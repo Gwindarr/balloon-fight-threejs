@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+    <head>
+        <title>3D Balloon Fight Physics Demo</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+            }
+            canvas {
+                display: block;
+            }
+            #info {
+                position: absolute;
+                top: 10px;
+                width: 100%;
+                text-align: center;
+                color: white;
+                font-family: Arial, sans-serif;
+                pointer-events: none;
+            }
+            #controls {
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                color: white;
+                font-family: Arial, sans-serif;
+                background-color: rgba(0, 0, 0, 0.5);
+                padding: 10px;
+                border-radius: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="info">3D Balloon Fight Physics Demo</div>
+        <div id="controls">
+            Controls: WASD = Move, Tap Space repeatedly to Flap, R = Release a
+            balloon, P = Pop a balloon, Q/E = Rotate camera, Mouse wheel = Zoom
+            in/out<br />
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        <script type="module" src="js/main.js"></script>
+    </body>
+</html>
