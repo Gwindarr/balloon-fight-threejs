@@ -1,97 +1,212 @@
-Balloon Fight 3D - Game Mechanics PRM
-Core Game Concept
-Balloon Fight 3D is a modernized 3D reimagining of the classic NES game Balloon Fight. Players control characters suspended by balloons in a 3D environment, attempting to pop opponents' balloons while protecting their own.
-Current Implementation Status
-Physics System
+# GAME DESIGN DOCUMENT
+## Project Title: Balloon Fight 3D
+**Genre:** Action/Arcade Remake
+**Platform:** Web (Three.js)
+**Target Audience:** Fans of retro games, casual gamers, ages 8+
 
-Gravity: Constant downward force (0.015 units per frame)
-Balloon Buoyancy: Each balloon provides upward force (0.009 units per frame)
-Movement: WASD for directional control aligned with camera
-Flapping: Space bar to flap, giving upward momentum boost
-Wind: Simple wind system affecting player movement
+## 1. High Concept
+Balloon Fight 3D is a modern reimagining of the classic NES game Balloon Fight in 3D, where players control a character suspended by balloons. The goal is to navigate through environments, pop opponents' balloons while protecting your own, and stay airborne as long as possible. The 3D environment adds depth to the classic gameplay while maintaining the core mechanics that made the original game enjoyable.
 
-Player Mechanics
+## 2. Core Visual Elements
 
-Default Balloon Configuration: Players start with 3 balloons
-Flapping: Tap space repeatedly to gain height and momentum
-Balloon Popping: Players pop others' balloons by touching them with their feet/legs
-Falling: When all balloons are popped, player falls and is eliminated
+### Characters
+- **Player Character:** A humanoid figure with cylindrical body, spherical head, and attached balloons
+- **NPC Opponents:** Similar design to the player, but with different colors to distinguish them
+- **Each character has:**
+  - 1-3 Balloons (player starts with 3)
+  - Distinctive body color (red for player by default)
+  - Skin-colored head
+  - Animated arms for flapping
+  - Legs for visual completeness
 
-Environment
+### Environment
+- **Platforms:** Flat rectangular surfaces where characters can land and launch from
+- **Ground:** Base level surface
+- **Water:** Optional hazard area
+- **Portals:** Transport characters between areas
+- **Skybox:** Simple atmospheric background
 
-Platforms: Multiple platforms at different heights for movement and strategy
-Water: Acts as a hazard with different physics properties
-World Boundaries: Bounce players back when they reach edges
+### Visual Effects
+- **Balloon Pop:** Small particle burst when a balloon is popped
+- **Shadow:** Dynamic shadow beneath characters that adjusts based on height
+- **Player flashing:** Brief invincibility period after losing a balloon
 
-Collision System
+## 3. Core Mechanics
 
-Player-to-Player: Players bounce off each other when colliding
-Player-to-Platform: Multiple collision cases (top, bottom, sides)
-Balloon Popping: Specific collision detection for feet-to-balloon interaction
+### Movement and Physics
+- **Balloon Buoyancy:** Each balloon provides upward force countering gravity
+- **Flapping:** Players can "flap" to gain altitude and momentum (Space key)
+- **Directional Control:** WASD keys for movement in 3D space
+- **Gravity:** Constant downward force
+- **Air Resistance:** Gradual slowing of movement
+- **Platform Collision:** Characters can land on and launch from platforms
 
-Proposed Gameplay Enhancements
-Refined Balloon Physics
+### Balloon Mechanics
+- **Balloon Management:**
+  - Each balloon provides buoyancy
+  - Fewer balloons mean less lift and more vulnerability
+  - No balloons means falling and eventual loss
+- **Popping Mechanics:**
+  - Players pop opponents' balloons by landing on them from above
+  - Popped balloons trigger visual effects and sound
+  - Characters get brief invincibility after losing a balloon
+- **Balloon Types:**
+  - Standard character balloons (attached)
+  - Released balloons (float away)
+  - Detached balloons (physics-driven)
 
-Fine-tuned Buoyancy: Adjust so 3 balloons provide just slightly more lift than gravity
-Balloon Count Physics:
+### Camera System
+- **Third-person following camera**
+- **Camera rotation with mouse**
+- **Option for camera distance adjustment**
 
-3 balloons: Very slow rise (vulnerable but safe)
-2 balloons: Slow descent
-1 balloon: Faster descent (vulnerable)
-0 balloons: Rapid fall (elimination)
+## 4. Game Flow
 
+### Start
+- Player spawns on a platform with 3 balloons
+- NPCs spawn on other platforms with 1-3 balloons each
 
-Height-dependent Buoyancy: Reduced lift at higher altitudes
+### Gameplay Loop
+1. Player navigates the 3D environment using flapping and directional controls
+2. Player attempts to pop opponents' balloons by landing on them from above
+3. Opponents move around platforms and try to pop player's balloons
+4. Player must avoid losing all balloons
+5. Portals allow travel between different areas
+6. New opponents spawn to replace fallen ones
 
-Strategic Balloon Release
+### Win/Lose Conditions
+- **Lose:** Player loses all balloons and falls
+- **Win:** In single-player mode, reach a target score or survive for a set time
+- **Multiplayer:** Last player with balloons remaining wins
 
-Voluntary Balloon Release: Allow players to strategically release balloons for tactical advantage
-Downward Momentum: Releasing a balloon provides downward speed boost
-Risk/Reward Balance: Sacrifice safety (fewer balloons) for offensive capability
+## 5. Technical Architecture
 
-Advanced Movement Techniques
+### Core Components
+1. **Character System:**
+   - Base Character class with shared properties and methods
+   - Player class extending Character with input handling
+   - NPC class extending Character with AI behavior
 
-Platform Jumps: Use platforms to gain height advantage
-Momentum Conservation: Allow skilled players to build and maintain momentum
-Dive Attacks: Release balloon to dive toward opponents below
+2. **Physics System:**
+   - Gravity and buoyancy calculations
+   - Collision detection (platforms, characters, world boundaries)
+   - Balloon physics
 
-Environmental Hazards
+3. **Game State Management:**
+   - Central state repository to avoid circular dependencies
+   - Track player status, NPCs, environment objects
+   - Handle game events (balloon pops, character falls, etc.)
 
-Wind Gusts: Periodically changing wind direction and strength
-Updrafts: Areas that provide temporary vertical lift
+4. **Input Handling:**
+   - Keyboard controls (WASD, Space)
+   - Mouse for camera control
+   - Pointer lock for seamless mouse movement
 
-Technical Implementation Notes
+5. **Scene Management:**
+   - Environment setup and rendering
+   - Camera controls
+   - Lighting and effects
 
-const GRAVITY = 0.015;
-const BALLOON_BUOYANCY = 0.0052;  // Adjusted so 3 balloons = 0.0156 (slightly > gravity)
+### File Structure
+```
+/src
+  /core
+    game.js         # Main game controller
+    gameState.js    # Central state management
+    scene.js        # Three.js scene setup
+    input.js        # Input handling
+    physics.js      # Physics calculations
+  /entities
+    character.js    # Base character class
+    player.js       # Player implementation
+    npc.js          # NPC implementation
+  /environment
+    environment.js  # Platform generation
+    portal.js       # Portal functionality
+  /effects
+    effects.js      # Visual effects
+    balloon.js      # Balloon functionality
+  /utils
+    helpers.js      # Utility functions
+  main.js           # Entry point
+```
 
-Collision Detection System
+## 6. UI Elements
 
-Box3 collision detection for platform interactions
-Sphere-based collision for player-to-player interactions
-Specialized detection for feet-to-balloon popping mechanics
+### HUD
+- **Balloon Count:** Visual indicator of remaining balloons
+- **Score:** Points earned for popping opponents' balloons
+- **Timer:** For timed game modes
 
-Player Animation
+### Menus
+- **Main Menu:** Start Game, Options, Credits
+- **Pause Menu:** Resume, Restart, Settings, Quit
+- **Game Over Screen:** Score, Restart, Main Menu
 
-Arm animations during flapping
-Visual feedback during invincibility periods
-Balloon bobbing and swaying animations
+## 7. Audio
 
-Future Development Directions
-Multiplayer Implementation
+### Sound Effects
+- **Balloon Pop:** When any balloon is popped
+- **Flap:** When player flaps arms
+- **Landing:** When touching a platform
+- **Falling:** When losing last balloon
+- **Portal:** When entering a portal
 
-Current system designed with multiplayer in mind
-All player entities use uniform structure regardless of local/AI control
-Ready for network synchronization in future development
+### Music
+- **Background Theme:** Upbeat, arcade-style music
+- **Game Over:** Short defeat jingle
+- **Victory:** Triumphant tune for winning
 
-Gameplay Variants
+## 8. Multiplayer Considerations
 
-Last Player Standing: Traditional elimination mode
-Balloon Collection: Collect balloons scattered around the level
-Team Modes: Team-based gameplay with shared objectives
+### Local Multiplayer
+- **Split-screen option**
+- **Multiple input devices**
 
-Advanced AI Behaviors
+### Network Multiplayer
+- **Player synchronization**
+- **Latency compensation**
+- **Lobby system**
 
-More intelligent platform navigation
-Adaptive difficulty based on player skill
-Group tactics for multi-opponent scenarios
+## 9. Implementation Priorities
+
+### Phase 1: Core Mechanics
+1. Implement base Character class
+2. Develop player controls and physics
+3. Create basic environment with platforms
+4. Implement balloon mechanics
+
+### Phase 2: Game Elements
+1. Add NPC characters with AI
+2. Implement collision detection for balloon popping
+3. Create visual effects for actions
+4. Add scoring and game conditions
+
+### Phase 3: Polish
+1. Improve visuals and animations
+2. Add sound effects and music
+3. Implement UI elements
+4. Add additional game modes
+
+### Phase 4: Multiplayer
+1. Implement local multiplayer functionality
+2. Develop network synchronization
+3. Create lobby and matchmaking system
+4. Balance gameplay for multiple players
+
+## 10. Technical Challenges and Solutions
+
+### Challenge: Circular Dependencies
+**Solution:** Implement central GameState module to manage shared state
+
+### Challenge: Character Movement and Physics
+**Solution:** Unified physics system with configurable parameters for different character types
+
+### Challenge: Balloon Interaction
+**Solution:** Consistent balloon interface across character types with standardized collision detection
+
+### Challenge: Performance with Multiple Characters
+**Solution:** Optimize rendering and update logic, potential for level-of-detail adjustments
+
+## Conclusion
+Balloon Fight 3D captures the core gameplay of the classic NES title while enhancing it with modern 3D graphics and expanded mechanics. The focus on smooth movement, intuitive controls, and strategic balloon management provides depth while remaining accessible to players of all skill levels. By implementing the technical architecture outlined above, the game will benefit from clean code organization, reduced redundancy, and scalability for additional features.

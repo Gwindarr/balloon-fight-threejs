@@ -5,15 +5,20 @@ export const groundSize = 500;
 export let ground;
 export let water;
 export let platforms = [];
+export let movingPlatforms = [];
 export let heightMarkerClouds = [];
 
 export function initEnvironment() {
     createGround();
     createWater();
     createPlatforms();
+    createMovingPlatforms();
     createMountains();
     createClouds();
     createHeightMarkers();
+    
+    // Make platforms accessible globally for collision system
+    window.environmentPlatforms = platforms;
 }
 
 // Create ground
@@ -25,6 +30,9 @@ function createGround() {
     ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0; // At y=0 so player stands on it
+    ground.userData = {
+        type: 'ground'
+    };
     scene.add(ground);
     
     // Add grid on ground for better visibility
@@ -62,18 +70,52 @@ function createWater() {
     water.rotation.x = -Math.PI / 2;
     water.position.z = groundSize / 4;
     water.position.y = 0.1; // Slightly above ground
+    water.userData = {
+        type: 'water'
+    };
     scene.add(water);
 }
 
 // Create platforms
 function createPlatforms() {
     platforms = [
-        createFloatingPlatform(30, 15, -20, 20, 5),
-        createFloatingPlatform(-25, 30, -10, 15, 5),
-        createFloatingPlatform(0, 45, -30, 25, 5),
-        createFloatingPlatform(-40, 60, 10, 15, 5),
-        createFloatingPlatform(50, 75, 0, 20, 5)
+        // Original platforms - slightly modified positions
+        createFloatingPlatform(30, 15, -20, 20, 10),
+        createFloatingPlatform(-25, 30, -10, 25, 12),
+        createFloatingPlatform(0, 45, -30, 30, 15),
+        createFloatingPlatform(-40, 60, 10, 25, 12),
+        createFloatingPlatform(50, 75, 0, 20, 10),
+        
+        // Additional platforms
+        createFloatingPlatform(-60, 20, -40, 22, 12),
+        createFloatingPlatform(60, 35, -60, 24, 14),
+        createFloatingPlatform(20, 55, 40, 26, 13),
+        createFloatingPlatform(-30, 70, 50, 22, 11),
+        createFloatingPlatform(0, 90, -80, 28, 15)
     ];
+}
+
+// Create moving platforms
+function createMovingPlatforms() {
+    // Horizontally rotating platform (spins like a record)
+    const horizRotatingPlatform = createHorizontallyRotatingPlatform(20, 25, 30, 25, 1, 10);
+    platforms.push(horizRotatingPlatform);
+    movingPlatforms.push(horizRotatingPlatform);
+    
+    // Vertically rotating platform (like a Ferris wheel)
+    const vertRotatingPlatform = createVerticallyRotatingPlatform(-70, 40, -20, 20, 1, 8);
+    platforms.push(vertRotatingPlatform);
+    movingPlatforms.push(vertRotatingPlatform);
+    
+    // Bonus: Orbital platform
+    const orbitalPlatform = createOrbitalPlatform(0, 35, 0, 30, 15, 1, 8);
+    platforms.push(orbitalPlatform);
+    movingPlatforms.push(orbitalPlatform);
+    
+    // Bonus: Elevator platform
+    const elevatorPlatform = createElevatorPlatform(-20, 50, 60, 20, 1, 10, 20);
+    platforms.push(elevatorPlatform);
+    movingPlatforms.push(elevatorPlatform);
 }
 
 // Create a floating platform
@@ -86,6 +128,12 @@ function createFloatingPlatform(x, y, z, width, depth) {
     platform.position.set(x, y, z);
     scene.add(platform);
     
+    // Add platform type for collision system
+    platform.userData = {
+        type: 'platform_static',
+        lastPosition: new THREE.Vector3().copy(platform.position)
+    };
+    
     // Add a colorful edge to make height more visible
     const edgeGeometry = new THREE.BoxGeometry(width, 0.2, depth);
     const edgeMaterial = new THREE.MeshLambertMaterial({
@@ -94,6 +142,137 @@ function createFloatingPlatform(x, y, z, width, depth) {
     const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
     edge.position.y = 0.6; // Position on top of platform
     platform.add(edge);
+    
+    return platform;
+}
+
+// Create a horizontally rotating platform
+function createHorizontallyRotatingPlatform(x, y, z, width, height, depth) {
+    const platformGeometry = new THREE.BoxGeometry(width, height, depth);
+    const platformMaterial = new THREE.MeshLambertMaterial({
+        color: 0x6A5ACD // Slate blue
+    });
+    const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+    platform.position.set(x, y, z);
+    scene.add(platform);
+    
+    // Add a distinctive edge
+    const edgeGeometry = new THREE.BoxGeometry(width, 0.3, depth);
+    const edgeMaterial = new THREE.MeshLambertMaterial({
+        color: 0x00FFFF // Cyan edge
+    });
+    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    edge.position.y = height/2 + 0.15; // Position on top of platform
+    platform.add(edge);
+    
+    // Add rotating platform properties
+    platform.userData = {
+        type: 'platform_rotating_horizontal',
+        rotationSpeed: 0.005, // radians per frame
+        rotationAxis: new THREE.Vector3(0, 1, 0),
+        center: new THREE.Vector3(x, y, z),
+        radius: 0, // Rotates in place
+        angle: 0,
+        lastPosition: new THREE.Vector3(x, y, z)
+    };
+    
+    return platform;
+}
+
+// Create a vertically rotating platform
+function createVerticallyRotatingPlatform(x, y, z, width, height, depth) {
+    const platformGeometry = new THREE.BoxGeometry(width, height, depth);
+    const platformMaterial = new THREE.MeshLambertMaterial({
+        color: 0xFF6347 // Tomato
+    });
+    const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+    platform.position.set(x, y, z);
+    scene.add(platform);
+    
+    // Add a distinctive edge
+    const edgeGeometry = new THREE.BoxGeometry(width, 0.3, depth);
+    const edgeMaterial = new THREE.MeshLambertMaterial({
+        color: 0xFFD700 // Gold edge
+    });
+    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    edge.position.y = height/2 + 0.15; // Position on top of platform
+    platform.add(edge);
+    
+    // Add rotating platform properties
+    platform.userData = {
+        type: 'platform_rotating_vertical',
+        rotationSpeed: 0.003, // radians per frame
+        rotationAxis: new THREE.Vector3(0, 0, 1),
+        center: new THREE.Vector3(x, y, z),
+        radius: 0, // Rotates in place
+        angle: 0,
+        lastPosition: new THREE.Vector3(x, y, z)
+    };
+    
+    return platform;
+}
+
+// Create an orbital platform (moves in a circular path)
+function createOrbitalPlatform(centerX, centerY, centerZ, radius, width, height, depth) {
+    const platformGeometry = new THREE.BoxGeometry(width, height, depth);
+    const platformMaterial = new THREE.MeshLambertMaterial({
+        color: 0x32CD32 // Lime green
+    });
+    const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+    
+    // Place initially at a point on the circle
+    platform.position.set(centerX + radius, centerY, centerZ);
+    scene.add(platform);
+    
+    // Add a distinctive edge
+    const edgeGeometry = new THREE.BoxGeometry(width, 0.3, depth);
+    const edgeMaterial = new THREE.MeshLambertMaterial({
+        color: 0x9ACD32 // Yellow-green edge
+    });
+    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    edge.position.y = height/2 + 0.15; // Position on top of platform
+    platform.add(edge);
+    
+    // Add orbital platform properties
+    platform.userData = {
+        type: 'platform_orbital',
+        rotationSpeed: 0.01,
+        center: new THREE.Vector3(centerX, centerY, centerZ),
+        radius: radius,
+        angle: 0,
+        lastPosition: new THREE.Vector3().copy(platform.position)
+    };
+    
+    return platform;
+}
+
+// Create an elevator platform (moves up and down)
+function createElevatorPlatform(x, y, z, width, height, depth, amplitude) {
+    const platformGeometry = new THREE.BoxGeometry(width, height, depth);
+    const platformMaterial = new THREE.MeshLambertMaterial({
+        color: 0xFFA500 // Orange
+    });
+    const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+    platform.position.set(x, y, z);
+    scene.add(platform);
+    
+    // Add a distinctive edge
+    const edgeGeometry = new THREE.BoxGeometry(width, 0.3, depth);
+    const edgeMaterial = new THREE.MeshLambertMaterial({
+        color: 0xFF4500 // Orange-red edge
+    });
+    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    edge.position.y = height/2 + 0.15; // Position on top of platform
+    platform.add(edge);
+    
+    // Add elevator platform properties
+    platform.userData = {
+        type: 'platform_elevator',
+        time: 0,
+        center: new THREE.Vector3(x, y, z),
+        amplitude: amplitude || 10, // How far it moves up/down
+        lastPosition: new THREE.Vector3().copy(platform.position)
+    };
     
     return platform;
 }
@@ -181,5 +360,41 @@ function createHeightMarkers() {
         lineGeometry.setFromPoints(points);
         const line = new THREE.Line(lineGeometry, lineMaterial);
         scene.add(line);
+    }
+}
+
+// Update function for moving platforms - Call this in your animation loop
+export function updateMovingPlatforms() {
+    if (!movingPlatforms || movingPlatforms.length === 0) return;
+    
+    for (const platform of movingPlatforms) {
+        // Store current position for physics calculations
+        if (!platform.userData.lastPosition) {
+            platform.userData.lastPosition = new THREE.Vector3();
+        }
+        platform.userData.lastPosition.copy(platform.position);
+        
+        if (platform.userData.type === 'platform_rotating_horizontal') {
+            // Rotate around Y-axis
+            platform.rotation.y += platform.userData.rotationSpeed;
+            platform.userData.angle += platform.userData.rotationSpeed;
+        } 
+        else if (platform.userData.type === 'platform_rotating_vertical') {
+            // Rotate around Z-axis
+            platform.rotation.z += platform.userData.rotationSpeed;
+            platform.userData.angle += platform.userData.rotationSpeed;
+        }
+        else if (platform.userData.type === 'platform_orbital') {
+            // Move in circular orbit
+            platform.userData.angle += platform.userData.rotationSpeed;
+            platform.position.x = platform.userData.center.x + Math.cos(platform.userData.angle) * platform.userData.radius;
+            platform.position.z = platform.userData.center.z + Math.sin(platform.userData.angle) * platform.userData.radius;
+        }
+        else if (platform.userData.type === 'platform_elevator') {
+            // Move up and down
+            platform.userData.time += 0.02;
+            platform.position.y = platform.userData.center.y + 
+                               Math.sin(platform.userData.time) * platform.userData.amplitude;
+        }
     }
 }

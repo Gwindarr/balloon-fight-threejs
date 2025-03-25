@@ -62,12 +62,20 @@ export function releaseBalloon() {
         // Give the released balloon some velocity
         releasedBalloon.userData.velocity = new THREE.Vector3(
             (Math.random() - 0.5) * 0.05, // Small random X velocity
-            0.1 + Math.random() * 0.05, // Upward Y velocity
+            0.15 + Math.random() * 0.05, // Increased upward velocity
             (Math.random() - 0.5) * 0.05 // Small random Z velocity
         );
         
         // Add balloon to a list of released balloons to update
         releasedBalloons.push(releasedBalloon);
+        
+        // Give player a small upward boost when releasing a balloon
+        // This helps prevent sudden drops when releasing balloons
+        if (playerBody.userData.velocity) {
+            const currentVelocity = playerBody.userData.velocity.y;
+            const minVelocity = 0.08 + (0.02 * balloons.length); // Scales with remaining balloons
+            playerBody.userData.velocity.y = Math.max(currentVelocity, minVelocity);
+        }
         
         // Play a balloon release sound
         // const releaseSound = new Audio("path/to/pop-sound.mp3"); // Add a sound file

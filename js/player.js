@@ -1,3 +1,4 @@
+
 import { scene } from './scene.js';
 import { platforms } from './environment.js';
 import { createPopEffect } from './effects.js';
@@ -9,7 +10,7 @@ export let balloons = [];
 export let playerVelocity = new THREE.Vector3(0, 0, 0);
 export let shadow;
 export const GRAVITY = 0.015;               
-export const BALLOON_BUOYANCY = 0.0052;     // Adjusted for better flight dynamics
+export const BALLOON_BUOYANCY = 0.0075;     // Increased to make 2 balloons nearly neutral
 export const VERTICAL_DRAG = 0.98;          // Vertical movement dampening
 export const MAX_VELOCITY = 0.3;            // Keep the same
 export const AIR_RESISTANCE = 0.98;         // Keep the same
@@ -77,7 +78,7 @@ export function initPlayer() {
     if (platforms.length > 0) {
         const startPlatform = platforms[0]; // Or whichever platform you prefer
         playerBody.position.x = startPlatform.position.x;
-        playerBody.position.y = startPlatform.position.y + 1; // 1 unit above platform
+        playerBody.position.y = startPlatform.position.y + 0.5; // 0.5 unit above platform to match new PLAYER_HEIGHT
         playerBody.position.z = startPlatform.position.z;
     }
     
@@ -96,6 +97,8 @@ export function initPlayer() {
         flapTime: 0,
         isFlapping: false,
         invincibleTime: 0,
+        isOnSurface: false,
+        currentPlatform: null,
         legMeshes: playerBody.children.filter(child => 
             child.geometry && child.geometry.type === 'ConeGeometry'
         )
@@ -109,7 +112,7 @@ export function initPlayer() {
 function createPlayerBody() {
     // Player character group
     playerBody = new THREE.Group();
-    playerBody.position.y = 10; // Start higher up to show floating down
+    playerBody.position.y = 0.5; // Start at the correct height for feet to touch ground
     scene.add(playerBody);
     
     // Player's actual body (cylinder)
@@ -177,7 +180,7 @@ function createPlayerShadow() {
     });
     shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
     shadow.rotation.x = -Math.PI / 2; // Lay flat on the ground
-    shadow.position.y = 0.01; // Slightly above ground to avoid z-fighting
+    shadow.position.y = 0.01; // Slightly above ground level (0) to avoid z-fighting
     scene.add(shadow);
     // Add this after creating the shadow
     shadow.visible = true;
@@ -321,6 +324,8 @@ export function createOpponent(x, y, z, color, platform, name = "Opponent") {
         leftArm: leftArm,
         rightArm: rightArm,
         invincibleTime: 0,
+        isOnSurface: false,
+        currentPlatform: null,
         legMeshes: [leftLeg, rightLeg]
     };
     
@@ -336,7 +341,7 @@ export function createOpponents() {
     if (platforms.length > 0) {
         createOpponent(
             platforms[0].position.x,
-            platforms[0].position.y + 1, // 1 unit above platform
+            platforms[0].position.y + 0.5, // 0.5 unit above platform to match new PLAYER_HEIGHT
             platforms[0].position.z,
             0xff0000, // Red
             platforms[0], // The platform this opponent is on
@@ -348,7 +353,7 @@ export function createOpponents() {
     if (platforms.length > 2) {
         createOpponent(
             platforms[2].position.x,
-            platforms[2].position.y + 1,
+            platforms[2].position.y + 0.5, // 0.5 unit above platform to match new PLAYER_HEIGHT
             platforms[2].position.z,
             0x00ff00, // Green
             platforms[2],
@@ -360,7 +365,7 @@ export function createOpponents() {
     if (platforms.length > 4) {
         createOpponent(
             platforms[4].position.x,
-            platforms[4].position.y + 1,
+            platforms[4].position.y + 0.5, // 0.5 unit above platform to match new PLAYER_HEIGHT
             platforms[4].position.z,
             0x0000ff, // Blue
             platforms[4],
@@ -493,7 +498,7 @@ export function updatePlayers() {
                         // Create a new player on this platform
                         createOpponent(
                             platform.position.x,
-                            platform.position.y + 1,
+                            platform.position.y + 0.5, // 0.5 unit above platform to match new PLAYER_HEIGHT
                             platform.position.z,
                             new THREE.Color(Math.random(), Math.random(), Math.random()),
                             platform,

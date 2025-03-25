@@ -1,49 +1,71 @@
 import { scene, camera, renderer, yaw, pitch, isPointerLocked } from './scene.js';
 import { playerBody, playerVelocity, shadow, balloons, GRAVITY, BALLOON_BUOYANCY, AIR_RESISTANCE, MAX_VELOCITY, leftArm, rightArm } from './player.js';
 import { allPlayers, checkBalloonCollisions, updatePlayers } from './player.js';
-import * as PlayerModule from './player.js';
 import * as Player from './player.js';
-import { keys, keysPressed, cameraDistance } from './input.js';
-import { platforms } from './environment.js';
-import { updateReleasedBalloons, updateDetachedBalloons, popBalloon } from './balloon.js';
-import { createPopEffect, updatePopEffects } from './effects.js';
-import { updateNPCs, npcs } from './npc.js';
+import { keys, keysPressed } from './input.js';
+import { updateMovingPlatforms } from './environment.js';
+import { updateReleasedBalloons, updateDetachedBalloons } from './balloon.js';
+import { updatePopEffects } from './effects.js';
 import { animatePortal, checkPortalCollision, teleportPlayer } from './portal.js';
+import { CollisionSystem } from './collisionSystem.js';
 
-// Constants for physics calculations
-const BOUNDARY_X = 200;
-const BOUNDARY_Z = 200;
-const BOUNCE_FACTOR = 0.3; // Bounce back with 30% of velocity
+// Constants
 const VERTICAL_DRAG = 0.98;
-
-let isOnSurface = false; 
-
-let isFlapping = false;
-let flapTime = 0;
 const FLAP_FORCE = 0.13;
 
-// Wind variables
-let windForce = new THREE.Vector2(0, 0);
-let windTimer = 0;
-const WIND_STRENGTH = 0.00;
-const WIND_CHANGE_RATE = 0.01;
+// Physics state constants
+const PLATFORMER_STATE = 'platformer';
+const BALLOON_STATE = 'balloon';
+
+// Platformer state constants
+const PLATFORMER_GRAVITY = 0.08;        // Much higher gravity for true platformer feel
+const PLATFORMER_JUMP_FORCE = 0.8;      // More reasonable jump force
+const PLATFORMER_TERMINAL_VELOCITY = -1.0; // Even faster falls
+const PLATFORMER_AIR_CONTROL = 0.3;     // Further reduced air control
+const PLATFORMER_GROUND_FRICTION = 0.85; // Standard ground friction
+
+// Balloon state constants
+const BALLOON_GRAVITY = 0.015;          // Original gravity
+const BALLOON_JUMP_FORCE_BASE = 0.35;   // Base jump force with balloons
+const BALLOON_JUMP_FORCE_PER_BALLOON = 0.05; // Additional force per balloon
+const BALLOON_AIR_CONTROL = 1.0;        // Full air control with balloons
+const BALLOON_GROUND_FRICTION = 0.85;   // Same ground friction
+
+// Current physics state
+let currentPhysicsState = BALLOON_STATE;
+
+// Platformer state variables
+let coyoteTimeCounter = 0;
+let wasOnSurface = false;
+let jumpBufferCounter = 0;
+const JUMP_BUFFER_FRAMES = 8; // Allow jump input to be buffered for 8 frames
 
 // Animation loop
 export function animate() {
     requestAnimationFrame(animate);
     
+    // Update moving platforms first
+    updateMovingPlatforms();
+
+    // Then update characters on platforms
+    updateCharactersOnPlatforms();
+
+    // Determine physics state based on balloon count
+    updatePhysicsState();
+
+    // Update player physics and collisions
     updatePlayerPhysics();
-    updateCollisions();
+    CollisionSystem.checkCollisions(playerBody);
+    
+    // Update game state
     updatePlayerShadow();
     updatePlayers();
     updateEffects();
     updateCameraPosition();
     checkBalloonCollisions();
 
-    // Animate portal
+    // Handle portal
     animatePortal();
-    
-    // Check for portal collision
     if (checkPortalCollision(playerBody.position)) {
         teleportPlayer();
     }
@@ -51,362 +73,541 @@ export function animate() {
     renderer.render(scene, camera);
 }
 
-function updateWind() {
-    // Wind disabled for now
-    return;
-    // Gradually change wind over time
-    windTimer += WIND_CHANGE_RATE;
-    windForce.x = Math.sin(windTimer) * WIND_STRENGTH;
-    windForce.y = Math.cos(windTimer * 0.7) * WIND_STRENGTH;
+// Update the physics state based on balloon count
+function updatePhysicsState() {
+    const newState = balloons.length === 0 ? PLATFORMER_STATE : BALLOON_STATE;
     
-    // Apply wind to player (more effect with more balloons)
-    if (balloons.length > 0) {
-        playerVelocity.x += windForce.x * balloons.length * 0.5;
-        playerVelocity.z += windForce.y * balloons.length * 0.5;
+    // If state changed, handle transition
+    if (newState !== currentPhysicsState) {
+        handleStateTransition(currentPhysicsState, newState);
+        currentPhysicsState = newState;
+    }
+}
+
+// Handle transition between physics states
+function handleStateTransition(oldState, newState) {
+    console.log(`%cPhysics state transition: ${oldState} -> ${newState}`, 'color: red; font-weight: bold; font-size: 14px;');
+    
+    // Reset arm positions
+    leftArm.rotation.z = Math.PI / 4;
+    rightArm.rotation.z = -Math.PI / 4;
+    
+    // Reset flapping state
+    playerBody.userData.isFlapping = false;
+    playerBody.userData.flapTime = 0;
+    
+    // Specific transitions
+    if (oldState === BALLOON_STATE && newState === PLATFORMER_STATE) {
+        // Transitioning from balloon to platformer
+        // Change player color to indicate platformer mode
+        const body = playerBody.children.find(child => 
+            child.geometry && child.geometry.type === 'CylinderGeometry' && 
+            child.position.y === 1
+        );
+        
+        if (body && body.material) {
+            // Save original color
+            if (!body.userData) body.userData = {};
+            body.userData.originalColor = body.material.color.clone();
+            
+            // Change to platformer color (blue)
+            body.material.color.set(0x0066ff);
+        }
+    } 
+    else if (oldState === PLATFORMER_STATE && newState === BALLOON_STATE) {
+        // Transitioning from platformer to balloon
+        // Give a small upward boost when gaining balloons
+        playerVelocity.y = Math.max(playerVelocity.y, 0.1);
+        
+        // Restore original player color
+        const body = playerBody.children.find(child => 
+            child.geometry && child.geometry.type === 'CylinderGeometry' && 
+            child.position.y === 1
+        );
+        
+        if (body && body.material && body.userData && body.userData.originalColor) {
+            body.material.color.copy(body.userData.originalColor);
+        }
     }
 }
 
 // Update player physics
 function updatePlayerPhysics() {
-    // Calculate buoyancy based on number of balloons
-    const buoyancy = BALLOON_BUOYANCY * balloons.length;
+    // Track if space was just pressed this frame (for jumping/flapping)
+    const spaceJustPressed = keys.space && !keysPressed.space;
+    keysPressed.space = keys.space;
     
-    // Apply gravity and buoyancy - ensure net downward force
-    playerVelocity.y -= GRAVITY;
-    playerVelocity.y += buoyancy;
-    
-    // Apply vertical drag to prevent excessive speeds
-    if (Math.abs(playerVelocity.y) > 0.1) {
-        playerVelocity.y *= VERTICAL_DRAG;
-    }
-
-    // Update wind effect
-    updateWind();
-    
-    // Ensure player always falls slightly when not flapping
-    if (!isFlapping && playerVelocity.y > 0.01) {
-        playerVelocity.y *= 0.9; // Dampen upward velocity
-    }
-    
-    // Jump/Flap logic
-    if (keys.space) {
-        if (isOnSurface) {
-            // Jump when on surface (ground or platform)
-            const jumpForce = 0.2; // Higher than flap force
-            playerVelocity.y = jumpForce;
-            
-            // Extra boost with balloons
-            if (balloons.length > 0) {
-                playerVelocity.y += 0.05 * balloons.length;
-            }
-            
-            // Jump animation
-            leftArm.rotation.z = Math.PI / 2;
-            rightArm.rotation.z = -Math.PI / 2;
-            
-            // Set a timeout to reset arms if not flapping
-            setTimeout(() => {
-                if (!isFlapping) {
-                    leftArm.rotation.z = Math.PI / 4;
-                    rightArm.rotation.z = -Math.PI / 4;
-                }
-            }, 300);
-            
-            isOnSurface = false; // No longer on surface
-        }
-        else if (!isFlapping) {
-            // Regular mid-air flapping
-            playerVelocity.y += FLAP_FORCE;
-            isFlapping = true;
-            flapTime = 0;
-            
-            // Animate arms flapping
-            leftArm.rotation.z = Math.PI / 2;
-            rightArm.rotation.z = -Math.PI / 2;
-        }
-    }
-    
-    // Make flapping reset faster to allow rapid flapping like in original game
-    if (isFlapping) {
-        flapTime += 2;
-        if (flapTime > 10) { // Shorter flap animation
-            isFlapping = false;
-            leftArm.rotation.z = Math.PI / 4;
-            rightArm.rotation.z = -Math.PI / 4;
-        }
-    }
-    
-    // Movement controls aligned with camera direction when pointer locked
-    if (isPointerLocked) {
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-            camera.quaternion
-        );
-        forward.y = 0; // Keep movement horizontal
-        forward.normalize();
-        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(
-            camera.quaternion
-        );
-        right.y = 0;
-        right.normalize();
-        
-        if (keys.w)
-            playerVelocity.add(forward.multiplyScalar(0.015)); // MOVEMENT_FORCE
-        if (keys.s)
-            playerVelocity.add(forward.multiplyScalar(-0.015)); // MOVEMENT_FORCE
-        if (keys.a)
-            playerVelocity.add(right.multiplyScalar(-0.015)); // MOVEMENT_FORCE
-        if (keys.d)
-            playerVelocity.add(right.multiplyScalar(0.015)); // MOVEMENT_FORCE
+    // Use the appropriate physics update based on current state
+    if (currentPhysicsState === PLATFORMER_STATE) {
+        updatePlatformerPhysics(spaceJustPressed);
     } else {
-        // Fallback movement when not locked
-        if (keys.w) playerVelocity.z -= 0.015; // MOVEMENT_FORCE
-        if (keys.s) playerVelocity.z += 0.015; // MOVEMENT_FORCE
-        if (keys.a) playerVelocity.x -= 0.015; // MOVEMENT_FORCE
-        if (keys.d) playerVelocity.x += 0.015; // MOVEMENT_FORCE
+        updateBalloonPhysics(spaceJustPressed);
     }
     
-    // Apply air resistance
-    playerVelocity.multiplyScalar(AIR_RESISTANCE);
+    // Common physics updates (for both states)
     
-    // Limit maximum velocity
-    if (playerVelocity.length() > MAX_VELOCITY) {
-        playerVelocity.normalize().multiplyScalar(MAX_VELOCITY);
+    // Surface friction (common for both states)
+    if (playerBody.userData.isOnSurface) {
+        const frictionFactor = currentPhysicsState === PLATFORMER_STATE ? 
+            PLATFORMER_GROUND_FRICTION : BALLOON_GROUND_FRICTION;
+            
+        playerVelocity.x *= frictionFactor;
+        playerVelocity.z *= frictionFactor;
+        
+        // Stopping threshold
+        if (Math.abs(playerVelocity.x) < 0.01) playerVelocity.x = 0;
+        if (Math.abs(playerVelocity.z) < 0.01) playerVelocity.z = 0;
+    }
+    
+    // Movement controls with different air control based on state
+    updateMovementControls();
+    
+    // Limit maximum velocity - but don't limit vertical velocity in platformer mode
+    if (currentPhysicsState === PLATFORMER_STATE) {
+        // For platformer state, only limit horizontal velocity
+        const horizontalVelocity = new THREE.Vector3(playerVelocity.x, 0, playerVelocity.z);
+        if (horizontalVelocity.length() > MAX_VELOCITY) {
+            horizontalVelocity.normalize().multiplyScalar(MAX_VELOCITY);
+            playerVelocity.x = horizontalVelocity.x;
+            playerVelocity.z = horizontalVelocity.z;
+        }
+    } else {
+        // For balloon state, limit all velocity components
+        if (playerVelocity.length() > MAX_VELOCITY) {
+            playerVelocity.normalize().multiplyScalar(MAX_VELOCITY);
+        }
     }
     
     // Update player position
     playerBody.position.add(playerVelocity);
 }
 
-// Check collisions and apply physics response
-function updateCollisions() {
-    // Ground collision with proper offset
-    if (playerBody.position.y < 1) { // 1 is half height of player
-        playerBody.position.y = 1;
-        playerVelocity.y = 0;
-    }
+// Update physics for platformer state (0 balloons)
+function updatePlatformerPhysics(spaceJustPressed) {
+    // Apply platformer gravity
+    playerVelocity.y -= PLATFORMER_GRAVITY;
     
-    // Platform collision handling
-    handleCollisions();
-    
-    // Update water collision with proper physics
-    if (playerBody.position.z > 0 && playerBody.position.y < 1.2) {
-        // Water "pushes" player up slightly
-        playerBody.position.y = Math.max(playerBody.position.y, 1.2);
+    // Update coyote time counter
+    if (playerBody.userData.isOnSurface) {
+        // Reset coyote time when on surface
+        coyoteTimeCounter = 0;
+        wasOnSurface = true;
         
-        // Apply water resistance - stronger than air
-        playerVelocity.multiplyScalar(0.92);
+        // Check for buffered jump
+        if (jumpBufferCounter > 0 && jumpBufferCounter <= JUMP_BUFFER_FRAMES) {
+            // Execute the buffered jump
+            executeJump();
+            jumpBufferCounter = 0;
+        }
+    } else if (wasOnSurface) {
+        // Increment coyote time when just left surface
+        coyoteTimeCounter++;
         
-        // Apply small upward force (buoyancy)
-        playerVelocity.y += 0.005;
+        // Reset wasOnSurface after coyote time expires
+        if (coyoteTimeCounter > CollisionSystem.CONSTANTS.PLATFORMER_COYOTE_TIME) {
+            wasOnSurface = false;
+        }
     }
     
-    // World boundaries with proper bounce
-    if (playerBody.position.x < -BOUNDARY_X) {
-        playerBody.position.x = -BOUNDARY_X;
-        playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR; // Bounce
-    } else if (playerBody.position.x > BOUNDARY_X) {
-        playerBody.position.x = BOUNDARY_X;
-        playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR; // Bounce
+    // Update jump buffer counter
+    if (spaceJustPressed) {
+        jumpBufferCounter = 1; // Start the buffer
+    } else if (jumpBufferCounter > 0) {
+        jumpBufferCounter++; // Increment buffer counter
+        if (jumpBufferCounter > JUMP_BUFFER_FRAMES) {
+            jumpBufferCounter = 0; // Reset if buffer expires
+        }
     }
     
-    if (playerBody.position.z < -BOUNDARY_Z) {
-        playerBody.position.z = -BOUNDARY_Z;
-        playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR; // Bounce
-    } else if (playerBody.position.z > BOUNDARY_Z) {
-        playerBody.position.z = BOUNDARY_Z;
-        playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR; // Bounce
+    // Handle jumping - allow during coyote time
+    const canJump = playerBody.userData.isOnSurface || 
+                   (wasOnSurface && coyoteTimeCounter <= CollisionSystem.CONSTANTS.PLATFORMER_COYOTE_TIME);
+                   
+    if (canJump && spaceJustPressed) {
+        executeJump();
     }
     
-    // Check for player-to-player collisions
+    // Function to execute the jump
+    function executeJump() {
+        // Strong platformer jump
+        playerVelocity.y = PLATFORMER_JUMP_FORCE;
+        
+        // Reset coyote time when jumping
+        wasOnSurface = false;
+        coyoteTimeCounter = 0;
+        jumpBufferCounter = 0;
+        
+        // Jump animation - arms at sides for platformer style
+        leftArm.rotation.z = 0;
+        rightArm.rotation.z = 0;
+        
+        // Add a slight forward lean
+        playerBody.rotation.x = 0.2;
+        
+        setTimeout(() => {
+            leftArm.rotation.z = Math.PI / 4;
+            rightArm.rotation.z = -Math.PI / 4;
+            playerBody.rotation.x = 0;
+        }, 300);
+    }
+    
+    // Add a small "hang time" at the peak of the jump
+    if (Math.abs(playerVelocity.y) < 0.05) {
+        playerVelocity.y *= 0.3; // More hang time for better feel
+    }
+    
+    // Terminal velocity
+    if (playerVelocity.y < PLATFORMER_TERMINAL_VELOCITY) {
+        playerVelocity.y = PLATFORMER_TERMINAL_VELOCITY;
+    }
+    
+    // Apply platformer air resistance
+    const resistanceFactor = 0.97;
+    playerVelocity.multiplyScalar(playerBody.userData.isOnSurface ? resistanceFactor * 0.98 : resistanceFactor);
 }
 
-function handleCollisions() {
-    // Reset surface detection at start of collision checks
-    isOnSurface = false;
+// Update physics for balloon state (1-3 balloons)
+function updateBalloonPhysics(spaceJustPressed) {
+    // Apply base gravity
+    playerVelocity.y -= BALLOON_GRAVITY;
     
-    // Ground collision
-    if (playerBody.position.y < 1) {
-        playerBody.position.y = 1;
-        playerVelocity.y = 0;
-        isOnSurface = true;
+    // Apply buoyancy based on balloon count
+    const buoyancy = BALLOON_BUOYANCY * balloons.length;
+    playerVelocity.y += buoyancy;
+    
+    // Add specific behavior based on balloon count
+    if (balloons.length === 3) {
+        // 3 balloons: Should provide net upward force
+        // Add a slight downward force to prevent too rapid ascent
+        playerVelocity.y -= 0.004;
+    } 
+    else if (balloons.length === 2) {
+        // 2 balloons: Should float but need flapping to gain height
+        // Add a very tiny downward force for slight descent
+        playerVelocity.y -= 0.001;
     }
     
-    // Water collision
-    if (playerBody.position.z > 0 && playerBody.position.y < 1.2) {
-        playerBody.position.y = Math.max(playerBody.position.y, 1.2);
-        playerVelocity.multiplyScalar(0.92);
-        playerVelocity.y += 0.005;
+    // JUMPING (from surface)
+    if (playerBody.userData.isOnSurface && spaceJustPressed) {
+        // With balloons = enhanced initial jump
+        playerVelocity.y = BALLOON_JUMP_FORCE_BASE + (BALLOON_JUMP_FORCE_PER_BALLOON * balloons.length);
+        
+        // Balloon jump animation - arms up
+        leftArm.rotation.z = Math.PI / 2;
+        rightArm.rotation.z = -Math.PI / 2;
+        setTimeout(() => {
+            leftArm.rotation.z = Math.PI / 4;
+            rightArm.rotation.z = -Math.PI / 4;
+        }, 300);
     }
     
-    // World boundaries
-    if (playerBody.position.x < -BOUNDARY_X) {
-        playerBody.position.x = -BOUNDARY_X;
-        playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR;
-    } else if (playerBody.position.x > BOUNDARY_X) {
-        playerBody.position.x = BOUNDARY_X;
-        playerVelocity.x = -playerVelocity.x * BOUNCE_FACTOR;
+    // FLAPPING (in mid-air with balloons)
+    if (!playerBody.userData.isOnSurface && spaceJustPressed) {
+        // Allow flapping more frequently
+        if (!playerBody.userData.isFlapping || playerBody.userData.flapTime > 5) {
+            // Different flap behavior based on balloon count
+            let flapStrength;
+            
+            if (balloons.length === 3) {
+                // Strong upward boost with 3 balloons
+                flapStrength = FLAP_FORCE * 1.4;
+                
+                // A bit more upward velocity for 3 balloons
+                if (playerVelocity.y < 0) {
+                    // Extra boost when falling to quickly recover
+                    flapStrength *= 1.2;
+                }
+            } 
+            else if (balloons.length === 2) {
+                // Medium boost with 2 balloons - enough to gain height
+                flapStrength = FLAP_FORCE * 1.5;
+                
+                // Add extra boost when in a descent
+                if (playerVelocity.y < 0) {
+                    // Extra boost when falling to better counteract gravity
+                    flapStrength *= 1.3;
+                }
+            }
+            else if (balloons.length === 1) {
+                // Weaker boost with 1 balloon - can still gain some height with effort
+                flapStrength = FLAP_FORCE * 1.2;
+                
+                // Even stronger boost when falling to give a fighting chance
+                if (playerVelocity.y < 0) {
+                    flapStrength *= 1.4;
+                }
+            }
+            
+            playerVelocity.y += flapStrength;
+            
+            // Reset flap state
+            playerBody.userData.isFlapping = true;
+            playerBody.userData.flapTime = 0;
+            
+            // Flapping animation
+            leftArm.rotation.z = Math.PI / 2;
+            rightArm.rotation.z = -Math.PI / 2;
+        }
     }
     
-    if (playerBody.position.z < -BOUNDARY_Z) {
-        playerBody.position.z = -BOUNDARY_Z;
-        playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR;
-    } else if (playerBody.position.z > BOUNDARY_Z) {
-        playerBody.position.z = BOUNDARY_Z;
-        playerVelocity.z = -playerVelocity.z * BOUNCE_FACTOR;
+    // Reset flapping state after animation
+    if (playerBody.userData.isFlapping) {
+        playerBody.userData.flapTime++;
+        if (playerBody.userData.flapTime > 6) { // Shorter cooldown
+            playerBody.userData.isFlapping = false;
+            leftArm.rotation.z = Math.PI / 4;
+            rightArm.rotation.z = -Math.PI / 4;
+        }
     }
     
-    // Handle platform collisions
-    handlePlatformCollisions();
+    // Different physics based on balloon count
+    if (balloons.length === 3) {
+        // 3 balloons = very floaty, slow rise even without flapping
+        const dragFactor = 0.994; // High drag factor to create floaty feeling
+        playerVelocity.y *= dragFactor;
+        
+        // Slight dampening when rising to prevent excessive height gain
+        if (!playerBody.userData.isFlapping && playerVelocity.y > 0.03) {
+            playerVelocity.y *= 0.97;
+        }
+    } else if (balloons.length === 2) {
+        // 2 balloons = almost neutral, flapping needed to gain height
+        const dragFactor = 0.992; // Increased drag to prevent sinking
+        playerVelocity.y *= dragFactor;
+        
+        // Add a very small upward force to counteract any remaining descent tendency
+        if (playerVelocity.y < 0 && playerVelocity.y > -0.01) {
+            playerVelocity.y *= 0.8; // Reduce downward velocity
+        }
+        
+        // Still have some dampening for upward movement
+        if (!playerBody.userData.isFlapping && playerVelocity.y > 0.01) {
+            playerVelocity.y *= 0.96;
+        }
+    } else if (balloons.length === 1) {
+        // 1 balloon = slow descent, more flapping needed
+        const dragFactor = 0.988; // Increased drag to slow the descent
+        playerVelocity.y *= dragFactor;
+        
+        // Limit maximum downward speed with 1 balloon
+        if (playerVelocity.y < -0.03) {
+            playerVelocity.y = -0.03;
+        }
+        
+        // Still have dampening for upward movement
+        if (!playerBody.userData.isFlapping && playerVelocity.y > 0.01) {
+            playerVelocity.y *= 0.94;
+        }
+    }
     
-    // Handle player-to-player collisions
-    handlePlayerCollisions();
+    // Apply balloon air resistance
+    playerVelocity.multiplyScalar(playerBody.userData.isOnSurface ? AIR_RESISTANCE * 0.98 : AIR_RESISTANCE);
 }
 
-// Break up the function into more manageable pieces:
-function handlePlatformCollisions() {
-    const playerRadius = 0.6;
-    const playerBottom = playerBody.position.y - 1;
-    const playerTop = playerBody.position.y + 1;
+// Update movement controls
+function updateMovementControls() {
+    if (isPointerLocked) {
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0;
+        forward.normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        right.y = 0;
+        right.normalize();
+        
+        // Base movement force
+        let movementForce = 0.015;
+        
+        // Apply air control modifier based on state
+        if (!playerBody.userData.isOnSurface) {
+            if (currentPhysicsState === PLATFORMER_STATE) {
+                movementForce *= PLATFORMER_AIR_CONTROL;
+            } else {
+                movementForce *= BALLOON_AIR_CONTROL;
+            }
+        }
+        
+        if (keys.w) playerVelocity.add(forward.multiplyScalar(movementForce));
+        if (keys.s) playerVelocity.add(forward.multiplyScalar(-movementForce));
+        if (keys.a) playerVelocity.add(right.multiplyScalar(-movementForce));
+        if (keys.d) playerVelocity.add(right.multiplyScalar(movementForce));
+    } else {
+        // Similar logic for non-pointer locked mode
+        let movementForce = 0.015;
+        
+        // Apply air control modifier based on state
+        if (!playerBody.userData.isOnSurface) {
+            if (currentPhysicsState === PLATFORMER_STATE) {
+                movementForce *= PLATFORMER_AIR_CONTROL;
+            } else {
+                movementForce *= BALLOON_AIR_CONTROL;
+            }
+        }
+        
+        if (keys.w) playerVelocity.z -= movementForce;
+        if (keys.s) playerVelocity.z += movementForce;
+        if (keys.a) playerVelocity.x -= movementForce;
+        if (keys.d) playerVelocity.x += movementForce;
+    }
+}
+
+function updateCharactersOnPlatforms() {
+    // Get all characters (both player and NPCs)
+    const allCharacters = Player.allPlayers || [];
     
-    for (const platform of platforms) {
-        const bbox = new THREE.Box3().setFromObject(platform);
+    for (const character of allCharacters) {
+        // Skip if character is not on a platform
+        if (!character.userData || !character.userData.currentPlatform) continue;
         
-        const playerMinX = playerBody.position.x - playerRadius;
-        const playerMaxX = playerBody.position.x + playerRadius;
-        const playerMinZ = playerBody.position.z - playerRadius;
-        const playerMaxZ = playerBody.position.z + playerRadius;
+        const platform = character.userData.currentPlatform;
         
-        if (
-            playerMaxX >= bbox.min.x && playerMinX <= bbox.max.x &&
-            playerMaxZ >= bbox.min.z && playerMinZ <= bbox.max.z &&
-            playerTop >= bbox.min.y && playerBottom <= bbox.max.y
-        ) {
-            // Landing on top
-            if (
-                playerBottom <= bbox.max.y + 0.3 &&
-                playerBottom >= bbox.max.y - 0.1 &&
-                playerVelocity.y <= 0
-            ) {
-                playerBody.position.y = bbox.max.y + 1;
-                playerVelocity.y = 0;
-                isOnSurface = true; // Set this here once only
-                continue;
-            }
+        // Skip non-moving platforms
+        if (!platform.userData || !platform.userData.type || platform.userData.type === 'static') continue;
+        
+        if (platform.userData.type === 'rotating_horizontal') {
+            // For horizontal rotating platforms, rotate character position around Y axis
+            const center = platform.userData.center;
+            const angle = platform.userData.rotationSpeed;
             
-            // Hitting bottom
-            if (
-                playerTop >= bbox.min.y - 0.3 &&
-                playerTop <= bbox.min.y + 0.1 &&
-                playerVelocity.y > 0
-            ) {
-                playerBody.position.y = bbox.min.y - 1;
-                playerVelocity.y = 0;
-                continue;
-            }
+            // Get character position relative to platform center
+            const relX = character.position.x - center.x;
+            const relZ = character.position.z - center.z;
             
-            // Side collision
-            const penRight = bbox.max.x - playerMinX;
-            const penLeft = playerMaxX - bbox.min.x;
-            const penFront = bbox.max.z - playerMinZ;
-            const penBack = playerMaxZ - bbox.min.z;
+            // Rotate this position
+            const cosAngle = Math.cos(angle);
+            const sinAngle = Math.sin(angle);
+            const newRelX = relX * cosAngle - relZ * sinAngle;
+            const newRelZ = relX * sinAngle + relZ * cosAngle;
             
-            const minPen = Math.min(penRight, penLeft, penFront, penBack);
+            // Update character position
+            character.position.x = center.x + newRelX;
+            character.position.z = center.z + newRelZ;
             
-            if (minPen === penRight) {
-                playerBody.position.x = bbox.max.x + playerRadius;
-                playerVelocity.x = 0;
-            } else if (minPen === penLeft) {
-                playerBody.position.x = bbox.min.x - playerRadius;
-                playerVelocity.x = 0;
-            } else if (minPen === penFront) {
-                playerBody.position.z = bbox.max.z + playerRadius;
-                playerVelocity.z = 0;
-            } else if (minPen === penBack) {
-                playerBody.position.z = bbox.min.z - playerRadius;
-                playerVelocity.z = 0;
-            }
+            // Also rotate the character to face the new direction
+            character.rotation.y += angle;
+        }
+        else if (platform.userData.type === 'rotating_vertical') {
+            // For vertical rotating platforms, complex rotation around Z axis
+            const center = platform.userData.center;
+            const angle = platform.userData.rotationSpeed;
+            
+            // Get character position relative to platform center
+            const relX = character.position.x - center.x;
+            const relY = character.position.y - center.y;
+            
+            // Rotate this position
+            const cosAngle = Math.cos(angle);
+            const sinAngle = Math.sin(angle);
+            const newRelX = relX * cosAngle - relY * sinAngle;
+            const newRelY = relX * sinAngle + relY * cosAngle;
+            
+            // Update character position
+            character.position.x = center.x + newRelX;
+            character.position.y = center.y + newRelY;
+        }
+        else if (platform.userData.type === 'orbital' || platform.userData.type === 'elevator') {
+            // For platforms that move without rotation, just add the delta
+            const deltaX = platform.position.x - platform.userData.lastPosition.x;
+            const deltaY = platform.position.y - platform.userData.lastPosition.y;
+            const deltaZ = platform.position.z - platform.userData.lastPosition.z;
+            
+            character.position.x += deltaX;
+            character.position.y += deltaY;
+            character.position.z += deltaZ;
         }
     }
 }
-
-function handlePlayerCollisions() {
-    const otherPlayers = Player.allPlayers || npcs || [];
-    
-    for (const otherPlayer of otherPlayers) {
-        if (otherPlayer === playerBody) continue;
-        
-        if (otherPlayer.userData && (!otherPlayer.userData.balloons || otherPlayer.userData.balloons.length === 0)) continue;
-        
-        const dx = playerBody.position.x - otherPlayer.position.x;
-        const dz = playerBody.position.z - otherPlayer.position.z;
-        const distSquared = dx * dx + dz * dz;
-        
-        const minDistance = 1.5;
-        if (distSquared < minDistance * minDistance) {
-            const dist = Math.sqrt(distSquared);
-            const pushDist = (minDistance - dist) / 2;
-            
-            const pushX = dx / dist * pushDist;
-            const pushZ = dz / dist * pushDist;
-            
-            playerBody.position.x += pushX;
-            playerBody.position.z += pushZ;
-            
-            const bounceMultiplier = 0.5;
-            playerVelocity.x += pushX * bounceMultiplier;
-            playerVelocity.z += pushZ * bounceMultiplier;
-            
-            playerVelocity.y += 0.03;
-        }
-    }
-}
-
 
 // Update player shadow
 function updatePlayerShadow() {
-    // Default shadow to ground level
+    // Position shadow under player
     shadow.position.x = playerBody.position.x;
     shadow.position.z = playerBody.position.z;
-    shadow.position.y = 0.01; // Just above ground
     
-    // Find the highest platform below the player
-    let highestPlatformY = -Infinity;
+    // Default to ground level
+    let shadowY = 0.01; // Slightly above ground level (0)
+    let onPlatform = false;
+    
+    // Check for platforms under player
+    const playerX = playerBody.position.x;
+    const playerZ = playerBody.position.z;
+    
+    // Get platforms from the scene - try both methods to ensure we find all platforms
+    let platforms = Array.from(scene.children).filter(
+        obj => obj.userData && obj.userData.type && obj.userData.type.includes('platform')
+    );
+    
+    // Also try to get platforms from the environment if available
+    if (window.environmentPlatforms && window.environmentPlatforms.length > 0) {
+        platforms = [...platforms, ...window.environmentPlatforms];
+    }
+    
+    // Get the number of platforms found
+    const platformCount = platforms.length;
     
     for (const platform of platforms) {
+        // Get platform dimensions and position
+        const width = platform.geometry.parameters.width;
+        const depth = platform.geometry.parameters.depth;
         const px = platform.position.x;
         const py = platform.position.y;
         const pz = platform.position.z;
-        const width = platform.geometry.parameters.width;
-        const depth = platform.geometry.parameters.depth;
         
-        // Check if player is directly above this platform
+        // Check if player is above this platform with a larger margin
         if (
-            playerBody.position.x >= px - width/2 &&
-            playerBody.position.x <= px + width/2 &&
-            playerBody.position.z >= pz - depth/2 &&
-            playerBody.position.z <= pz + depth/2
+            playerX >= px - width/2 - 0.1 && playerX <= px + width/2 + 0.1 &&
+            playerZ >= pz - depth/2 - 0.1 && playerZ <= pz + depth/2 + 0.1
         ) {
-            // If this platform is below player but higher than any found so far
-            if (py < playerBody.position.y && py > highestPlatformY) {
-                highestPlatformY = py;
+            // If this platform is higher than our current shadow position
+            if (py > shadowY) {
+                // Set shadow to top of this platform
+                shadowY = py + 0.55; // Platform height is 1, so y + 0.5 is the top
+                onPlatform = true;
+                
+                // Shadow is now on a platform
             }
         }
     }
     
-    // If we found a platform below the player, place shadow on top of it
-    if (highestPlatformY > -Infinity) {
-        // Place shadow just above the platform's surface
-        shadow.position.y = highestPlatformY + 0.51; // 0.51 to be visibly above platform
-        
-        // Log to help with debugging
-        console.log("Shadow on platform at y =", shadow.position.y);
+    // Set final shadow position
+    shadow.position.y = shadowY;
+    
+    // Calculate shadow scale based on height
+    const heightDifference = playerBody.position.y - shadowY;
+    const scale = Math.max(0.5, 1 - heightDifference * 0.02);
+    shadow.scale.set(scale, scale, 1);
+    
+    // Calculate shadow opacity based on height
+    let opacity = Math.max(0.1, 0.5 - heightDifference * 0.01);
+    
+    // Make shadow more visible in platformer mode
+    if (currentPhysicsState === PLATFORMER_STATE) {
+        opacity = Math.max(0.3, opacity);
     }
     
-    // Dynamic shadow size and opacity
-    const heightAboveGround = playerBody.position.y - shadow.position.y;
-    const scale = Math.max(0.5, 1 - heightAboveGround * 0.02);
-    shadow.scale.set(scale, scale, 1);
-    shadow.material.opacity = Math.max(0.1, 0.5 - heightAboveGround * 0.01);
+    // Make shadow more visible when on a platform
+    if (onPlatform) {
+        opacity = Math.max(0.4, opacity);
+    }
+    
+    shadow.material.opacity = opacity;
+    
+    // Make sure shadow is visible
+    shadow.material.transparent = true;
+    shadow.visible = true;
+    
+    // Set shadow color based on whether it's on a platform
+    if (onPlatform) {
+        shadow.material.color.set(0x333333); // Darker shadow on platforms
+        
+        // Ensure shadow is visible on platforms by adjusting its position and rendering properties
+        shadow.position.y = shadowY + 0.02; // Position slightly above platform surface
+        shadow.renderOrder = 2; // Higher render order to ensure it renders on top
+        shadow.material.depthTest = false; // Disable depth testing so it always renders on top
+    } else {
+        shadow.material.color.set(0x000000); // Normal shadow on ground
+        shadow.renderOrder = 1;
+        shadow.material.depthTest = true; // Re-enable depth testing for ground shadows
+    }
 }
 
 // Update all effects

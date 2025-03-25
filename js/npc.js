@@ -48,18 +48,18 @@ function createNPC(x, y, z, color, platform) {
     const npc = new THREE.Group();
     npc.position.set(x, y, z);
     
-    // NPC body (cylinder)
+    // NPC body (cylinder) - matching player body position
     const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
     const bodyMaterial = new THREE.MeshLambertMaterial({ color: color });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 0; // Center of NPC
+    body.position.y = 1; // Matches player body positioning
     npc.add(body);
     
     // NPC head (sphere)
     const headGeometry = new THREE.SphereGeometry(0.5, 16, 16);
     const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffcc99 });
     const head = new THREE.Mesh(headGeometry, headMaterial);
-    head.position.y = 1.5; // Top of NPC
+    head.position.y = 2.5; // Matches player head position
     npc.add(head);
     
     // Arms
@@ -67,25 +67,25 @@ function createNPC(x, y, z, color, platform) {
     const armMaterial = new THREE.MeshLambertMaterial({ color: color });
 
     const leftArm = new THREE.Mesh(armGeometry, armMaterial);
-    leftArm.position.set(-0.8, 0.5, 0);
+    leftArm.position.set(-0.8, 1.5, 0);
     leftArm.rotation.z = Math.PI / 4;
     npc.add(leftArm);
 
     const rightArm = new THREE.Mesh(armGeometry, armMaterial);
-    rightArm.position.set(0.8, 0.5, 0);
+    rightArm.position.set(0.8, 1.5, 0);
     rightArm.rotation.z = -Math.PI / 4;
     npc.add(rightArm);
 
-    // Legs
-    const legGeometry = new THREE.CylinderGeometry(0.25, 0.25, 1, 8);
+    // Legs - matching player leg geometry and positioning
+    const legGeometry = new THREE.ConeGeometry(0.25, 1, 4);
     const legMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
 
     const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
-    leftLeg.position.set(-0.3, -1, 0);
+    leftLeg.position.set(-0.3, 0, 0);
     npc.add(leftLeg);
 
     const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
-    rightLeg.position.set(0.3, -1, 0);
+    rightLeg.position.set(0.3, 0, 0);
     npc.add(rightLeg);
     
     // Add NPC to scene
@@ -105,9 +105,9 @@ function createNPC(x, y, z, color, platform) {
         const balloonMaterial = new THREE.MeshLambertMaterial({ color: balloonColor });
         const balloon = new THREE.Mesh(balloonGeometry, balloonMaterial);
         
-        // Position balloon above NPC with some randomness
+        // Position balloon above NPC with some randomness, but higher to match player
         const xOffset = (Math.random() - 0.5) * 1.5;
-        balloon.position.set(xOffset, 3 + Math.random(), 0);
+        balloon.position.set(xOffset, 4 + Math.random(), 0);
         
         // String (line)
         const stringGeometry = new THREE.BufferGeometry().setFromPoints([
@@ -240,8 +240,8 @@ function animateNPCBalloons(npc) {
     for (let i = 0; i < npc.userData.balloons.length; i++) {
         const balloon = npc.userData.balloons[i];
         
-        // Balloon bobbing motion
-        balloon.position.y = 3 + Math.sin(time + i) * 0.1;
+        // Balloon bobbing motion - matching player balloon height
+        balloon.position.y = 4 + Math.sin(time + i) * 0.1;
         
         // Slight swaying
         balloon.position.x = (i - 1) * 0.6 + Math.sin(time * 0.5 + i * 2) * 0.1;
