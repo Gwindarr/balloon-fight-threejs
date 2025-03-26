@@ -152,16 +152,7 @@ Balloon Fight 3D is a modern reimagining of the classic NES game Balloon Fight i
 - **Falling:** When losing last balloon
 - **Portal:** When entering a portal
 
-### Music
-- **Background Theme:** Upbeat, arcade-style music
-- **Game Over:** Short defeat jingle
-- **Victory:** Triumphant tune for winning
-
-## 8. Multiplayer Considerations
-
-### Local Multiplayer
-- **Split-screen option**
-- **Multiple input devices**
+## 8. Multiplayer Considerations*
 
 ### Network Multiplayer
 - **Player synchronization**

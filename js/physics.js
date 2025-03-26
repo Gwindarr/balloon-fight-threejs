@@ -1,13 +1,15 @@
+import * as THREE from 'three';
 import { scene, camera, renderer, yaw, pitch, isPointerLocked } from './scene.js';
 import { playerBody, playerVelocity, shadow, balloons, GRAVITY, BALLOON_BUOYANCY, AIR_RESISTANCE, MAX_VELOCITY, leftArm, rightArm } from './player.js';
 import { allPlayers, checkBalloonCollisions, updatePlayers } from './player.js';
 import * as Player from './player.js';
 import { keys, keysPressed } from './input.js';
-import { updateMovingPlatforms } from './environment.js';
+import { updateEnvironment } from './environment.js';
 import { updateReleasedBalloons, updateDetachedBalloons } from './balloon.js';
 import { updatePopEffects } from './effects.js';
-import { animatePortal, checkPortalCollision, teleportPlayer } from './portal.js';
+import { animatePortal, checkPortalCollision, teleportPlayer, portal, PORTAL_RADIUS } from './portal.js';
 import { CollisionSystem } from './collisionSystem.js';
+import { updateHUD } from './hud.js';
 
 // Constants
 const VERTICAL_DRAG = 0.98;
@@ -18,18 +20,21 @@ const PLATFORMER_STATE = 'platformer';
 const BALLOON_STATE = 'balloon';
 
 // Platformer state constants
-const PLATFORMER_GRAVITY = 0.08;        // Much higher gravity for true platformer feel
-const PLATFORMER_JUMP_FORCE = 0.8;      // More reasonable jump force
-const PLATFORMER_TERMINAL_VELOCITY = -1.0; // Even faster falls
-const PLATFORMER_AIR_CONTROL = 0.3;     // Further reduced air control
-const PLATFORMER_GROUND_FRICTION = 0.85; // Standard ground friction
+const PLATFORMER_GRAVITY = 0.03;
+const PLATFORMER_JUMP_FORCE = 0.8;
+const PLATFORMER_DOUBLE_JUMP_FORCE = 0.6;
+const PLATFORMER_GLIDE_FACTOR = 0.5;
+const PLATFORMER_AIR_CONTROL = 0.8;
+const PLATFORMER_GROUND_FRICTION = 0.92;
+const PLATFORMER_TERMINAL_VELOCITY = -0.4; // Re-added to fix the error
+const PLATFORMER_MIN_JUMP_FORCE = 0.5; // Re-added to ensure variable jump height works
 
 // Balloon state constants
-const BALLOON_GRAVITY = 0.015;          // Original gravity
-const BALLOON_JUMP_FORCE_BASE = 0.35;   // Base jump force with balloons
-const BALLOON_JUMP_FORCE_PER_BALLOON = 0.05; // Additional force per balloon
-const BALLOON_AIR_CONTROL = 1.0;        // Full air control with balloons
-const BALLOON_GROUND_FRICTION = 0.85;   // Same ground friction
+const BALLOON_GRAVITY = 0.012;
+const BALLOON_JUMP_FORCE_BASE = 0.3;
+const BALLOON_JUMP_FORCE_PER_BALLOON = 0.06;
+const BALLOON_AIR_CONTROL = 1.2;
+const BALLOON_GROUND_FRICTION = 0.85;
 
 // Current physics state
 let currentPhysicsState = BALLOON_STATE;
@@ -40,36 +45,36 @@ let wasOnSurface = false;
 let jumpBufferCounter = 0;
 const JUMP_BUFFER_FRAMES = 8; // Allow jump input to be buffered for 8 frames
 
+// Flap and kick animation variables
+let flapAnimationProgress = 0;
+let isAnimatingFlap = false;
+let flapCooldownTimer = 0; // Added to fix the error
+let kickAnimationProgress = 0;
+let isAnimatingKick = false;
+let kickCooldownTimer = 0; // Added to fix potential future error
+
 // Animation loop
 export function animate() {
     requestAnimationFrame(animate);
-    
-    // Update moving platforms first
-    updateMovingPlatforms();
-
-    // Then update characters on platforms
+    updateEnvironment();
     updateCharactersOnPlatforms();
-
-    // Determine physics state based on balloon count
     updatePhysicsState();
-
-    // Update player physics and collisions
     updatePlayerPhysics();
     CollisionSystem.checkCollisions(playerBody);
-    
-    // Update game state
     updatePlayerShadow();
     updatePlayers();
     updateEffects();
     updateCameraPosition();
     checkBalloonCollisions();
-
-    // Handle portal
-    animatePortal();
-    if (checkPortalCollision(playerBody.position)) {
-        teleportPlayer();
-    }
     
+    animatePortal();
+    let hudMessage = "";
+    if (checkPortalCollision(playerBody.position, keysPressed)) {
+        teleportPlayer();
+    } else if (portal && playerBody.position.distanceTo(portal.position) < PORTAL_RADIUS * 1.5) { // Match the HUD range to the collision range
+        hudMessage = "Press E to enter portal";
+    }
+    updateHUD(currentPhysicsState, hudMessage);
     renderer.render(scene, camera);
 }
 
@@ -86,11 +91,12 @@ function updatePhysicsState() {
 
 // Handle transition between physics states
 function handleStateTransition(oldState, newState) {
-    console.log(`%cPhysics state transition: ${oldState} -> ${newState}`, 'color: red; font-weight: bold; font-size: 14px;');
     
-    // Reset arm positions
-    leftArm.rotation.z = Math.PI / 4;
-    rightArm.rotation.z = -Math.PI / 4;
+    // Reset arm positions if arms exist
+    if (leftArm && rightArm) {
+        leftArm.rotation.z = Math.PI / 4;
+        rightArm.rotation.z = -Math.PI / 4;
+    }
     
     // Reset flapping state
     playerBody.userData.isFlapping = false;
@@ -187,6 +193,18 @@ function updatePlatformerPhysics(spaceJustPressed) {
     // Apply platformer gravity
     playerVelocity.y -= PLATFORMER_GRAVITY;
     
+    // Check if player is moving horizontally for walking animation
+    const isMoving = Math.abs(playerVelocity.x) > 0.01 || Math.abs(playerVelocity.z) > 0.01;
+    const movementSpeed = Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z) * 10;
+    
+    // Animate walking when on surface
+    if (playerBody.userData.isOnSurface) {
+        Player.animateWalking(isMoving, movementSpeed);
+    } else {
+        // Reset animation when in air
+        Player.animateWalking(false);
+    }
+    
     // Update coyote time counter
     if (playerBody.userData.isOnSurface) {
         // Reset coyote time when on surface
@@ -237,18 +255,53 @@ function updatePlatformerPhysics(spaceJustPressed) {
         coyoteTimeCounter = 0;
         jumpBufferCounter = 0;
         
-        // Jump animation - arms at sides for platformer style
-        leftArm.rotation.z = 0;
-        rightArm.rotation.z = 0;
+        // Jump animation - arms at sides for platformer style (if arms exist)
+        if (leftArm && rightArm) {
+            leftArm.rotation.z = 0;
+            rightArm.rotation.z = 0;
+        }
         
-        // Add a slight forward lean
-        playerBody.rotation.x = 0.2;
+        // Add a slight forward lean only if playerBody exists
+        if (playerBody && playerBody.userData) {
+            // Clear any existing timeout to prevent leaks
+            if (playerBody.userData.leanTimeout) {
+                clearTimeout(playerBody.userData.leanTimeout);
+            }
+
+            // Set lean using rotation if available, otherwise userData
+            if (playerBody.rotation) {
+                playerBody.rotation.x = 0.2;
+            } else {
+                playerBody.userData.jumpLean = 0.2;
+            }
+            
+            // Set timeout to reset lean
+            playerBody.userData.leanTimeout = setTimeout(() => {
+                if (leftArm && rightArm) {
+                    leftArm.rotation.z = Math.PI / 4;
+                    rightArm.rotation.z = -Math.PI / 4;
+                }
+                if (playerBody) {
+                    if (playerBody.rotation) {
+                        playerBody.rotation.x = 0;
+                    } else if (playerBody.userData) {
+                        playerBody.userData.jumpLean = 0;
+                    }
+                }
+            }, 300);
+        }
         
-        setTimeout(() => {
-            leftArm.rotation.z = Math.PI / 4;
-            rightArm.rotation.z = -Math.PI / 4;
-            playerBody.rotation.x = 0;
-        }, 300);
+        // Variable jump height - check for early release
+        const jumpCheckInterval = setInterval(() => {
+            if (!keys.space && playerVelocity.y > PLATFORMER_MIN_JUMP_FORCE) {
+                // Reduce jump force if jump button released early
+                playerVelocity.y = PLATFORMER_MIN_JUMP_FORCE;
+                clearInterval(jumpCheckInterval);
+            } else if (playerVelocity.y <= 0) {
+                // Jump finished
+                clearInterval(jumpCheckInterval);
+            }
+        }, 16); // Check every frame (~60fps)
     }
     
     // Add a small "hang time" at the peak of the jump
@@ -266,7 +319,6 @@ function updatePlatformerPhysics(spaceJustPressed) {
     playerVelocity.multiplyScalar(playerBody.userData.isOnSurface ? resistanceFactor * 0.98 : resistanceFactor);
 }
 
-// Update physics for balloon state (1-3 balloons)
 function updateBalloonPhysics(spaceJustPressed) {
     // Apply base gravity
     playerVelocity.y -= BALLOON_GRAVITY;
@@ -280,8 +332,7 @@ function updateBalloonPhysics(spaceJustPressed) {
         // 3 balloons: Should provide net upward force
         // Add a slight downward force to prevent too rapid ascent
         playerVelocity.y -= 0.004;
-    } 
-    else if (balloons.length === 2) {
+    } else if (balloons.length === 2) {
         // 2 balloons: Should float but need flapping to gain height
         // Add a very tiny downward force for slight descent
         playerVelocity.y -= 0.001;
@@ -317,8 +368,7 @@ function updateBalloonPhysics(spaceJustPressed) {
                     // Extra boost when falling to quickly recover
                     flapStrength *= 1.2;
                 }
-            } 
-            else if (balloons.length === 2) {
+            } else if (balloons.length === 2) {
                 // Medium boost with 2 balloons - enough to gain height
                 flapStrength = FLAP_FORCE * 1.5;
                 
@@ -327,8 +377,7 @@ function updateBalloonPhysics(spaceJustPressed) {
                     // Extra boost when falling to better counteract gravity
                     flapStrength *= 1.3;
                 }
-            }
-            else if (balloons.length === 1) {
+            } else if (balloons.length === 1) {
                 // Weaker boost with 1 balloon - can still gain some height with effort
                 flapStrength = FLAP_FORCE * 1.2;
                 
@@ -404,49 +453,132 @@ function updateBalloonPhysics(spaceJustPressed) {
     playerVelocity.multiplyScalar(playerBody.userData.isOnSurface ? AIR_RESISTANCE * 0.98 : AIR_RESISTANCE);
 }
 
+// Constants for improved movement
+const BASE_MOVEMENT_FORCE = 0.05; // Increased by 15% from 0.02
+const RUN_MOVEMENT_FORCE = 0.07; // 50% more than base for running
+const MOVEMENT_ACCELERATION = 0.65; // Slightly increased for faster acceleration
+const RUN_ACCELERATION = 0.75; // Faster acceleration when running
+const MOVEMENT_DECELERATION = 0.8; // Keep the same
+const MAX_HORIZONTAL_VELOCITY = 0.8; // Increased by 15% from 0.4
+const MAX_RUN_VELOCITY = 1.0; // 30% faster than walking
+const FLAP_HORIZONTAL_BOOST = 0.15; // Increased horizontal boost when flapping
+
 // Update movement controls
 function updateMovementControls() {
+    // Calculate desired movement direction
+    let moveX = 0;
+    let moveZ = 0;
+    
     if (isPointerLocked) {
+        // Camera-relative movement
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
         forward.y = 0;
         forward.normalize();
+        
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
         right.y = 0;
         right.normalize();
         
-        // Base movement force
-        let movementForce = 0.015;
-        
-        // Apply air control modifier based on state
-        if (!playerBody.userData.isOnSurface) {
-            if (currentPhysicsState === PLATFORMER_STATE) {
-                movementForce *= PLATFORMER_AIR_CONTROL;
-            } else {
-                movementForce *= BALLOON_AIR_CONTROL;
-            }
+        // Calculate desired direction
+        if (keys.w) {
+            moveX += forward.x;
+            moveZ += forward.z;
         }
-        
-        if (keys.w) playerVelocity.add(forward.multiplyScalar(movementForce));
-        if (keys.s) playerVelocity.add(forward.multiplyScalar(-movementForce));
-        if (keys.a) playerVelocity.add(right.multiplyScalar(-movementForce));
-        if (keys.d) playerVelocity.add(right.multiplyScalar(movementForce));
+        if (keys.s) {
+            moveX -= forward.x;
+            moveZ -= forward.z;
+        }
+        if (keys.a) {
+            moveX -= right.x;
+            moveZ -= right.z;
+        }
+        if (keys.d) {
+            moveX += right.x;
+            moveZ += right.z;
+        }
     } else {
-        // Similar logic for non-pointer locked mode
-        let movementForce = 0.015;
+        // Non-camera-relative movement (simple WASD)
+        if (keys.w) moveZ -= 1;
+        if (keys.s) moveZ += 1;
+        if (keys.a) moveX -= 1;
+        if (keys.d) moveX += 1;
+    }
+    
+    // Normalize movement vector if moving diagonally
+    if (moveX !== 0 || moveZ !== 0) {
+        const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        moveX /= length;
+        moveZ /= length;
+    }
+    
+    // Base movement force with state-specific modifiers
+    let movementForce = keys.shift ? RUN_MOVEMENT_FORCE : BASE_MOVEMENT_FORCE;
+    let acceleration = keys.shift ? RUN_ACCELERATION : MOVEMENT_ACCELERATION;
+    let maxVelocity = keys.shift ? MAX_RUN_VELOCITY : MAX_HORIZONTAL_VELOCITY;
+
+    // Momentum buildup when running
+    if (keys.shift) {
+        const runTime = performance.now() - (playerBody.userData.runStartTime || performance.now());
+        playerBody.userData.runStartTime = playerBody.userData.runStartTime || performance.now();
         
-        // Apply air control modifier based on state
-        if (!playerBody.userData.isOnSurface) {
-            if (currentPhysicsState === PLATFORMER_STATE) {
-                movementForce *= PLATFORMER_AIR_CONTROL;
-            } else {
-                movementForce *= BALLOON_AIR_CONTROL;
+        // Gradually increase speed up to 1.5x over 2 seconds
+        const speedBoost = Math.min(1.5, 1.0 + runTime / 2000);
+        movementForce *= speedBoost;
+        maxVelocity *= speedBoost;
+
+        // Camera shake effect at max speed
+        if (speedBoost >= 1.4) {
+            camera.position.x += (Math.random() - 0.5) * 0.03;
+            camera.position.y += (Math.random() - 0.5) * 0.03;
+        }
+    } else {
+        playerBody.userData.runStartTime = null;
+    }
+    
+    // Apply air control modifier based on state
+    if (!playerBody.userData.isOnSurface) {
+        if (currentPhysicsState === PLATFORMER_STATE) {
+            movementForce *= PLATFORMER_AIR_CONTROL;
+        } else {
+            movementForce *= BALLOON_AIR_CONTROL;
+            
+            // Add horizontal boost when flapping in balloon mode
+            if (playerBody.userData.isFlapping && playerBody.userData.flapTime <= 2) {
+                // Apply horizontal boost in the direction of movement
+                if (moveX !== 0 || moveZ !== 0) {
+                    playerVelocity.x += moveX * FLAP_HORIZONTAL_BOOST;
+                    playerVelocity.z += moveZ * FLAP_HORIZONTAL_BOOST;
+                }
             }
         }
+    }
+    
+    // Apply acceleration-based movement
+    if (moveX !== 0 || moveZ !== 0) {
+        // Player is actively moving - accelerate towards desired direction
+        const targetVelocityX = moveX * movementForce * 1.5; // 1.5x multiplier for higher top speed
+        const targetVelocityZ = moveZ * movementForce * 1.5;
         
-        if (keys.w) playerVelocity.z -= movementForce;
-        if (keys.s) playerVelocity.z += movementForce;
-        if (keys.a) playerVelocity.x -= movementForce;
-        if (keys.d) playerVelocity.x += movementForce;
+        // Accelerate towards target velocity
+        playerVelocity.x += (targetVelocityX - playerVelocity.x) * acceleration;
+        playerVelocity.z += (targetVelocityZ - playerVelocity.z) * acceleration;
+    } else {
+        // No movement input - decelerate
+        playerVelocity.x *= MOVEMENT_DECELERATION;
+        playerVelocity.z *= MOVEMENT_DECELERATION;
+    }
+    
+    // Apply horizontal speed limit
+    const horizontalVelocity = new THREE.Vector2(playerVelocity.x, playerVelocity.z);
+    if (horizontalVelocity.length() > maxVelocity) {
+        horizontalVelocity.normalize().multiplyScalar(maxVelocity);
+        playerVelocity.x = horizontalVelocity.x;
+        playerVelocity.z = horizontalVelocity.y; // THREE.Vector2 uses x,y not x,z
+    }
+    
+    // Running animation state
+    if (playerBody.userData.isOnSurface) {
+        Player.setRunningState(keys.shift && (Math.abs(playerVelocity.x) > 0.1 || Math.abs(playerVelocity.z) > 0.1));
     }
 }
 
@@ -463,56 +595,48 @@ function updateCharactersOnPlatforms() {
         // Skip non-moving platforms
         if (!platform.userData || !platform.userData.type || platform.userData.type === 'static') continue;
         
+        // Store the character's relative position on the platform if not already stored
+        if (!character.userData.platformRelativePosition) {
+            character.userData.platformRelativePosition = new THREE.Vector3();
+            
+            // Calculate relative position to platform center
+            if (platform.userData.center) {
+                character.userData.platformRelativePosition.x = character.position.x - platform.userData.center.x;
+                character.userData.platformRelativePosition.y = character.position.y - platform.userData.center.y;
+                character.userData.platformRelativePosition.z = character.position.z - platform.userData.center.z;
+            } else {
+                // If no center is defined, use platform position
+                character.userData.platformRelativePosition.x = character.position.x - platform.position.x;
+                character.userData.platformRelativePosition.y = character.position.y - platform.position.y;
+                character.userData.platformRelativePosition.z = character.position.z - platform.position.z;
+            }
+        }
+        
+        // For all platform types, use the delta movement approach
+        // This is more stable than recalculating positions with trig functions
+        const deltaX = platform.position.x - platform.userData.lastPosition.x;
+        const deltaY = platform.position.y - platform.userData.lastPosition.y;
+        const deltaZ = platform.position.z - platform.userData.lastPosition.z;
+        
+        // Apply platform movement to character
+        character.position.x += deltaX;
+        character.position.y += deltaY;
+        character.position.z += deltaZ;
+        
+        // For rotating platforms, also rotate the character
         if (platform.userData.type === 'rotating_horizontal') {
-            // For horizontal rotating platforms, rotate character position around Y axis
-            const center = platform.userData.center;
-            const angle = platform.userData.rotationSpeed;
-            
-            // Get character position relative to platform center
-            const relX = character.position.x - center.x;
-            const relZ = character.position.z - center.z;
-            
-            // Rotate this position
-            const cosAngle = Math.cos(angle);
-            const sinAngle = Math.sin(angle);
-            const newRelX = relX * cosAngle - relZ * sinAngle;
-            const newRelZ = relX * sinAngle + relZ * cosAngle;
-            
-            // Update character position
-            character.position.x = center.x + newRelX;
-            character.position.z = center.z + newRelZ;
-            
-            // Also rotate the character to face the new direction
-            character.rotation.y += angle;
+            // Rotate character to match platform rotation
+            character.rotation.y += platform.userData.rotationSpeed;
         }
         else if (platform.userData.type === 'rotating_vertical') {
-            // For vertical rotating platforms, complex rotation around Z axis
-            const center = platform.userData.center;
-            const angle = platform.userData.rotationSpeed;
+            // For vertical rotation, we need to update the character's height
+            // based on the platform's rotation around its center
             
-            // Get character position relative to platform center
-            const relX = character.position.x - center.x;
-            const relY = character.position.y - center.y;
+            // This is handled by the delta movement above, but we might need
+            // to adjust the character's orientation
             
-            // Rotate this position
-            const cosAngle = Math.cos(angle);
-            const sinAngle = Math.sin(angle);
-            const newRelX = relX * cosAngle - relY * sinAngle;
-            const newRelY = relX * sinAngle + relY * cosAngle;
-            
-            // Update character position
-            character.position.x = center.x + newRelX;
-            character.position.y = center.y + newRelY;
-        }
-        else if (platform.userData.type === 'orbital' || platform.userData.type === 'elevator') {
-            // For platforms that move without rotation, just add the delta
-            const deltaX = platform.position.x - platform.userData.lastPosition.x;
-            const deltaY = platform.position.y - platform.userData.lastPosition.y;
-            const deltaZ = platform.position.z - platform.userData.lastPosition.z;
-            
-            character.position.x += deltaX;
-            character.position.y += deltaY;
-            character.position.z += deltaZ;
+            // We don't rotate the character itself for vertical rotation
+            // as that would make them tilt sideways
         }
     }
 }
@@ -545,12 +669,17 @@ function updatePlayerShadow() {
     const platformCount = platforms.length;
     
     for (const platform of platforms) {
-        // Get platform dimensions and position
-        const width = platform.geometry.parameters.width;
-        const depth = platform.geometry.parameters.depth;
-        const px = platform.position.x;
-        const py = platform.position.y;
-        const pz = platform.position.z;
+        // Skip if platform is invalid or missing geometry
+        if (!platform || !platform.geometry || !platform.geometry.parameters) {
+            continue;
+        }
+
+        // Get platform dimensions and position with fallback values
+        const width = platform.geometry.parameters?.width || 1;
+        const depth = platform.geometry.parameters?.depth || 1;
+        const px = platform.position.x || 0;
+        const py = platform.position.y || 0;
+        const pz = platform.position.z || 0;
         
         // Check if player is above this platform with a larger margin
         if (
@@ -639,7 +768,4 @@ function updateCameraPosition() {
         playerBody.position.z
     );
     camera.lookAt(lookAtPos);
-    
-    // Set the camera rotation order to match our control scheme
-    camera.rotation.order = "YXZ";
 }

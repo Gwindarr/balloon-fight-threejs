@@ -1,4 +1,5 @@
-
+import * as THREE from 'three';
+import { Character } from './character.js';
 import { scene } from './scene.js';
 import { platforms } from './environment.js';
 import { createPopEffect } from './effects.js';
@@ -9,8 +10,8 @@ export let playerBody;
 export let balloons = [];
 export let playerVelocity = new THREE.Vector3(0, 0, 0);
 export let shadow;
-export const GRAVITY = 0.015;               
-export const BALLOON_BUOYANCY = 0.0075;     // Increased to make 2 balloons nearly neutral
+export const GRAVITY = 0.012;               // Reduced to match physics.js BALLOON_GRAVITY
+export const BALLOON_BUOYANCY = 0.006;      // Adjusted to match new gravity
 export const VERTICAL_DRAG = 0.98;          // Vertical movement dampening
 export const MAX_VELOCITY = 0.3;            // Keep the same
 export const AIR_RESISTANCE = 0.98;         // Keep the same
@@ -18,13 +19,23 @@ export const FLAP_FORCE = 0.13;             // Keep the same
 export const FLAP_COOLDOWN = 8;             // Keep the same
 export const MOVEMENT_FORCE = 0.008;        // Keep the same
 export let leftArm, rightArm; // Export for animation
+export let leftLeg, rightLeg; // Export legs for animation
 export let flapTime = 0;
 export let isFlapping = false;
 export let playerInvincibilityTime = 0;
+export let walkCycle = 0; // For walking animation
 
 // New multiplayer-supporting exports
 export const allPlayers = []; // Array to hold all players (local and opponents)
 export let localPlayerEntity = null; // Reference to the local player entity
+
+// Player class extending Character
+class Player extends Character {
+  constructor(x, y, z, color, name) {
+    super(x, y, z, color, name || "Player");
+    this.isLocalPlayer = true;
+  }
+}
 
 // Export functions to modify player state (maintained for compatibility)
 export function setPlayerInvincibility(frames) {
@@ -67,18 +78,22 @@ export function getFlapTime() {
 export function initPlayer() {
     console.log("Starting player initialization");
 
-    createPlayerBody();
-    createPlayerShadow();
-    createPlayerBalloons();
-
-    // Option 1: Start on ground
-    // playerBody.position.set(0, 1, 0); // y=1 puts feet at ground level
+    // Create player instance
+    const player = new Player(0, 0.5, 0, 0xff0000);
+    playerBody = player.entity;
     
-    // OR Option 2: Start on a platform (if available)
+    // Create shadow
+    createPlayerShadow();
+    
+    // Add balloons
+    player.addBalloons(3, [0xff0000, 0x0000ff, 0x00ff00]);
+    balloons = player.balloons;
+
+    // Start on a platform if available
     if (platforms.length > 0) {
-        const startPlatform = platforms[0]; // Or whichever platform you prefer
+        const startPlatform = platforms[0];
         playerBody.position.x = startPlatform.position.x;
-        playerBody.position.y = startPlatform.position.y + 0.5; // 0.5 unit above platform to match new PLAYER_HEIGHT
+        playerBody.position.y = startPlatform.position.y + 0.5;
         playerBody.position.z = startPlatform.position.z;
     }
     
@@ -88,80 +103,31 @@ export function initPlayer() {
     // Set up the local player entity
     localPlayerEntity = playerBody;
     localPlayerEntity.userData = {
+        ...playerBody.userData,
         isLocalPlayer: true,
-        name: "Player",
         velocity: playerVelocity,
         balloons: balloons,
-        leftArm: leftArm,
-        rightArm: rightArm,
+        leftArm: playerBody.userData.leftArm,
+        rightArm: playerBody.userData.rightArm,
+        leftLeg: playerBody.userData.leftLeg,
+        rightLeg: playerBody.userData.rightLeg,
         flapTime: 0,
         isFlapping: false,
+        walkCycle: 0,
         invincibleTime: 0,
         isOnSurface: false,
         currentPlatform: null,
-        legMeshes: playerBody.children.filter(child => 
-            child.geometry && child.geometry.type === 'ConeGeometry'
-        )
+        legMeshes: [playerBody.userData.leftLeg, playerBody.userData.rightLeg]
     };
     
     // Add to the players array
     allPlayers.push(playerBody);
-}
-
-// Create player body and parts
-function createPlayerBody() {
-    // Player character group
-    playerBody = new THREE.Group();
-    playerBody.position.y = 0.5; // Start at the correct height for feet to touch ground
-    scene.add(playerBody);
     
-    // Player's actual body (cylinder)
-    const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
-    const bodyMaterial = new THREE.MeshLambertMaterial({
-        color: 0xff0000
-    });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 1;
-    playerBody.add(body);
-    
-    // Player's head (sphere)
-    const headGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-    const headMaterial = new THREE.MeshLambertMaterial({
-        color: 0xffcc99
-    });
-    const head = new THREE.Mesh(headGeometry, headMaterial);
-    head.position.y = 2.5;
-    playerBody.add(head);
-    
-    // Arms
-    const armGeometry = new THREE.CylinderGeometry(0.2, 0.2, 1, 8);
-    const armMaterial = new THREE.MeshLambertMaterial({
-        color: 0xff0000
-    });
-    
-    leftArm = new THREE.Mesh(armGeometry, armMaterial);
-    leftArm.position.set(-0.8, 1.5, 0);
-    leftArm.rotation.z = Math.PI / 4;
-    playerBody.add(leftArm);
-    
-    rightArm = new THREE.Mesh(armGeometry, armMaterial);
-    rightArm.position.set(0.8, 1.5, 0);
-    rightArm.rotation.z = -Math.PI / 4;
-    playerBody.add(rightArm);
-    
-    // Legs
-    const legGeometry = new THREE.ConeGeometry(0.25, 1, 4);
-    const legMaterial = new THREE.MeshLambertMaterial({
-        color: 0x0000ff
-    });
-    
-    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
-    leftLeg.position.set(-0.3, 0, 0);
-    playerBody.add(leftLeg);
-    
-    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
-    rightLeg.position.set(0.3, 0, 0);
-    playerBody.add(rightLeg);
+    // Set exported references for backward compatibility
+    leftArm = playerBody.userData.leftArm;
+    rightArm = playerBody.userData.rightArm;
+    leftLeg = playerBody.userData.leftLeg;
+    rightLeg = playerBody.userData.rightLeg;
 }
 
 // Create player shadow
@@ -187,35 +153,76 @@ function createPlayerShadow() {
     shadow.renderOrder = 1; // Make sure it renders above other objects
 }
 
-// Create player balloons
-function createPlayerBalloons() {
-    const balloon1 = createBalloon(-1, 4, 0, 0xff0000); // Red
-    const balloon2 = createBalloon(1, 4, 0, 0x0000ff); // Blue
-    const balloon3 = createBalloon(0, 4.5, 0, 0x00ff00); // Green
+
+// Animate player walking (for platformer mode)
+export function animateWalking(isMoving, speed = 1) {
+    // Only animate if player is moving and limbs exist
+    if (!isMoving) {
+        // Reset to default pose when not moving
+        if (leftLeg) leftLeg.rotation.x = 0;
+        if (rightLeg) rightLeg.rotation.x = 0;
+        if (leftArm) leftArm.rotation.z = Math.PI / 4;
+        if (rightArm) rightArm.rotation.z = -Math.PI / 4;
+        return;
+    }
+    
+    // Update walk cycle
+    walkCycle += 0.15 * speed;
+    
+    // Animate legs if they exist
+    if (leftLeg && rightLeg) {
+        leftLeg.rotation.x = Math.sin(walkCycle) * 0.5;
+        rightLeg.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
+    }
+    
+    // Animate arms if they exist (opposite to legs for natural walking motion)
+    if (leftArm && rightArm) {
+        leftArm.rotation.z = Math.PI / 4 + Math.sin(walkCycle + Math.PI) * 0.3;
+        rightArm.rotation.z = -Math.PI / 4 + Math.sin(walkCycle) * 0.3;
+    }
+    
+    // Add a slight body bob
+    if (playerBody) {
+        playerBody.position.y += Math.abs(Math.sin(walkCycle * 2)) * 0.02;
+    }
 }
 
-// Create a balloon
-function createBalloon(x, y, z, color) {
-    const balloonGeometry = new THREE.SphereGeometry(0.6, 16, 16);
-    const balloonMaterial = new THREE.MeshLambertMaterial({
-        color: color
-    });
-    const balloon = new THREE.Mesh(balloonGeometry, balloonMaterial);
-    balloon.position.set(x, y, z);
+// Set running state and animate accordingly
+export function setRunningState(isRunning) {
+    if (!playerBody) return;
     
-    // String (line)
-    const stringGeometry = new THREE.BufferGeometry().setFromPoints(
-        [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1.5, 0)]
-    );
-    const stringMaterial = new THREE.LineBasicMaterial({
-        color: 0xffffff
-    });
-    const string = new THREE.Line(stringGeometry, stringMaterial);
-    balloon.add(string);
-    
-    playerBody.add(balloon);
-    balloons.push(balloon);
-    return balloon;
+    if (isRunning) {
+        // Running animation - faster walk cycle
+        walkCycle += 0.25;
+        
+        // More exaggerated leg movement
+        if (leftLeg && rightLeg) {
+            leftLeg.rotation.x = Math.sin(walkCycle) * 0.7;
+            rightLeg.rotation.x = Math.sin(walkCycle + Math.PI) * 0.7;
+        }
+        
+        // Arms more active
+        if (leftArm && rightArm) {
+            leftArm.rotation.z = Math.PI / 4 + Math.sin(walkCycle + Math.PI) * 0.5;
+            rightArm.rotation.z = -Math.PI / 4 + Math.sin(walkCycle) * 0.5;
+        }
+        
+        // Lean forward slightly when running
+        playerBody.rotation.x = 0.15;
+        
+        // Enhanced running animation
+        const runIntensity = 1.5;
+        playerBody.position.y += Math.abs(Math.sin(walkCycle * 3)) * 0.05 * runIntensity;
+        playerBody.rotation.x = Math.sin(walkCycle * 3) * 0.1 * runIntensity;
+        playerBody.rotation.z = Math.sin(walkCycle * 1.5) * 0.05 * runIntensity;
+        
+        // Visual feedback - character leans forward when running
+        playerBody.position.z -= Math.abs(Math.sin(walkCycle * 1.5)) * 0.02 * runIntensity;
+    } else {
+        // Reset to normal walking pose
+        playerBody.rotation.x = 0;
+        playerBody.rotation.z = 0;
+    }
 }
 
 // ==========================================
@@ -224,109 +231,27 @@ function createBalloon(x, y, z, color) {
 
 // Create an opponent player
 export function createOpponent(x, y, z, color, platform, name = "Opponent") {
-    // Create player group
-    const opponentBody = new THREE.Group();
-    opponentBody.position.set(x, y, z);
-    scene.add(opponentBody);
+    // Create opponent instance
+    const opponent = new Character(x, y, z, color, name);
+    const opponentBody = opponent.entity;
     
-    // Player's actual body (cylinder)
-    const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
-    const bodyMaterial = new THREE.MeshLambertMaterial({
-        color: color
-    });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 1;
-    opponentBody.add(body);
-    
-    // Player's head (sphere)
-    const headGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-    const headMaterial = new THREE.MeshLambertMaterial({
-        color: 0xffcc99
-    });
-    const head = new THREE.Mesh(headGeometry, headMaterial);
-    head.position.y = 2.5;
-    opponentBody.add(head);
-    
-    // Arms
-    const armGeometry = new THREE.CylinderGeometry(0.2, 0.2, 1, 8);
-    const armMaterial = new THREE.MeshLambertMaterial({
-        color: color
-    });
-    
-    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
-    leftArm.position.set(-0.8, 1.5, 0);
-    leftArm.rotation.z = Math.PI / 4;
-    opponentBody.add(leftArm);
-    
-    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
-    rightArm.position.set(0.8, 1.5, 0);
-    rightArm.rotation.z = -Math.PI / 4;
-    opponentBody.add(rightArm);
-    
-    // Legs
-    const legGeometry = new THREE.ConeGeometry(0.25, 1, 4);
-    const legMaterial = new THREE.MeshLambertMaterial({
-        color: 0x0000ff
-    });
-    
-    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
-    leftLeg.position.set(-0.3, 0, 0);
-    opponentBody.add(leftLeg);
-    
-    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
-    rightLeg.position.set(0.3, 0, 0);
-    opponentBody.add(rightLeg);
-    
-    // Create balloons for the opponent
-    const opponentBalloons = [];
-    const balloonCount = 1 + Math.floor(Math.random() * 3); // 1-3 balloons
-    
+    // Add random balloons (1-3)
+    const balloonCount = 1 + Math.floor(Math.random() * 3);
+    const balloonColors = [];
     for (let i = 0; i < balloonCount; i++) {
-        const balloonGeometry = new THREE.SphereGeometry(0.6, 16, 16);
-        // Random color for balloons
-        const balloonColor = new THREE.Color(
-            Math.random(), 
-            Math.random(), 
-            Math.random()
-        );
-        const balloonMaterial = new THREE.MeshLambertMaterial({ color: balloonColor });
-        const balloon = new THREE.Mesh(balloonGeometry, balloonMaterial);
-        
-        // Position balloon above opponent with some randomness
-        const xOffset = (Math.random() - 0.5) * 1.5;
-        balloon.position.set(xOffset, 3 + Math.random(), 0);
-        
-        // String (line)
-        const stringGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0), 
-            new THREE.Vector3(0, -1.5, 0)
-        ]);
-        const stringMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-        const string = new THREE.Line(stringGeometry, stringMaterial);
-        balloon.add(string);
-        
-        opponentBody.add(balloon);
-        opponentBalloons.push(balloon);
+        balloonColors.push(new THREE.Color(Math.random(), Math.random(), Math.random()));
     }
+    opponent.addBalloons(balloonCount, balloonColors);
     
     // Store opponent properties
     opponentBody.userData = {
+        ...opponentBody.userData,
         isLocalPlayer: false,
-        name: name,
-        velocity: new THREE.Vector3(0, 0, 0),
         moveDirection: new THREE.Vector2(Math.random() - 0.5, Math.random() - 0.5).normalize(),
         moveSpeed: 0.02 + Math.random() * 0.03,
         platform: platform,
-        balloons: opponentBalloons,
-        animationTime: Math.random() * Math.PI * 2, // Random start phase
-        flapTime: 0,
-        isFlapping: false,
-        leftArm: leftArm,
-        rightArm: rightArm,
-        invincibleTime: 0,
-        isOnSurface: false,
-        currentPlatform: null,
-        legMeshes: [leftLeg, rightLeg]
+        walkCycle: 0,
+        legMeshes: [opponentBody.userData.leftLeg, opponentBody.userData.rightLeg]
     };
     
     // Add to players array
@@ -376,64 +301,21 @@ export function createOpponents() {
 
 // Pop a balloon from any player
 export function popBalloon(playerEntity, balloon) {
-    // If player is invincible, don't pop balloon
-    if (playerEntity.userData.invincibleTime > 0) {
-        return false;
-    }
+    // Use Character's popBalloon method
+    const popped = playerEntity.userData.popBalloon(balloon, createPopEffect);
     
-    // Get the player's balloons array
-    const playerBalloons = playerEntity.userData.balloons;
-    
-    // If no balloons left, return
-    if (!playerBalloons || playerBalloons.length === 0) {
-        return false;
-    }
-    
-    // If no specific balloon is provided, pop the last one
-    if (!balloon) {
-        balloon = playerBalloons[playerBalloons.length - 1];
-    }
-    
-    // Get balloon position in world coordinates before removing
-    const balloonWorldPos = new THREE.Vector3();
-    balloon.getWorldPosition(balloonWorldPos);
-    
-    // Remove from player's balloon array
-    const balloonIndex = playerBalloons.indexOf(balloon);
-    if (balloonIndex !== -1) {
-        playerBalloons.splice(balloonIndex, 1);
-    }
-    
-    // Remove from scene
-    playerEntity.remove(balloon);
-    
-    // Create pop effect at world position
-    createPopEffect(balloonWorldPos);
-    
-    // Set brief invincibility
-    playerEntity.userData.invincibleTime = 60; // 1 second at 60fps
-    
-    // If this is the local player, update the global variables too
-    if (playerEntity === localPlayerEntity) {
-        // Update original balloons array
+    if (popped && playerEntity === localPlayerEntity) {
+        // Update original balloons array for backward compatibility
         const globalIndex = balloons.indexOf(balloon);
         if (globalIndex !== -1) {
             balloons.splice(globalIndex, 1);
         }
         
         // Update invincibility
-        playerInvincibilityTime = 60;
+        playerInvincibilityTime = playerEntity.userData.invincibleTime;
     }
     
-    // Log the event
-    console.log(`${playerEntity.userData.name} lost a balloon! ${playerBalloons.length} remaining.`);
-    
-    // If player lost all balloons, they'll fall
-    if (playerBalloons.length === 0) {
-        console.log(`${playerEntity.userData.name} lost all balloons and is falling!`);
-    }
-    
-    return true; // Successfully popped
+    return popped;
 }
 
 // Update all players (call this in your animate loop)
@@ -568,29 +450,43 @@ function updateAIMovement(player) {
         player.rotation.y = Math.atan2(player.userData.velocity.x, player.userData.velocity.z);
     }
     
-    // Occasional random jumping/flapping
-    if (Math.random() < 0.01 && !player.userData.isFlapping) {
-        player.userData.isFlapping = true;
-        player.userData.flapTime = 0;
-        player.position.y += 0.2; // Small hop
+    // Animate walking for AI
+    if (player.userData.balloons.length === 0) {
+        // Update walk cycle
+        player.userData.walkCycle = (player.userData.walkCycle || 0) + 0.15;
         
-        // Animate arms flapping
-        player.userData.leftArm.rotation.z = Math.PI / 2;
-        player.userData.rightArm.rotation.z = -Math.PI / 2;
-    }
-    
-    // Reset flapping animation
-    if (player.userData.isFlapping) {
-        player.userData.flapTime++;
-        if (player.userData.flapTime > 10) {
-            player.userData.isFlapping = false;
-            player.userData.leftArm.rotation.z = Math.PI / 4;
-            player.userData.rightArm.rotation.z = -Math.PI / 4;
+        // Animate legs
+        player.userData.leftLeg.rotation.x = Math.sin(player.userData.walkCycle) * 0.5;
+        player.userData.rightLeg.rotation.x = Math.sin(player.userData.walkCycle + Math.PI) * 0.5;
+        
+        // Animate arms (opposite to legs for natural walking motion)
+        player.userData.leftArm.rotation.z = Math.PI / 4 + Math.sin(player.userData.walkCycle + Math.PI) * 0.3;
+        player.userData.rightArm.rotation.z = -Math.PI / 4 + Math.sin(player.userData.walkCycle) * 0.3;
+    } else {
+        // Occasional random jumping/flapping
+        if (Math.random() < 0.01 && !player.userData.isFlapping) {
+            player.userData.isFlapping = true;
+            player.userData.flapTime = 0;
+            player.position.y += 0.2; // Small hop
+            
+            // Animate arms flapping
+            player.userData.leftArm.rotation.z = Math.PI / 2;
+            player.userData.rightArm.rotation.z = -Math.PI / 2;
+        }
+        
+        // Reset flapping animation
+        if (player.userData.isFlapping) {
+            player.userData.flapTime++;
+            if (player.userData.flapTime > 10) {
+                player.userData.isFlapping = false;
+                player.userData.leftArm.rotation.z = Math.PI / 4;
+                player.userData.rightArm.rotation.z = -Math.PI / 4;
+            }
         }
     }
 }
 
-// Add this function to your player.js file if it doesn't exist
+// Check for balloon collisions between players
 export function checkBalloonCollisions() {
     // Loop through all players
     for (let i = 0; i < allPlayers.length; i++) {
@@ -599,8 +495,9 @@ export function checkBalloonCollisions() {
         // Skip players with no balloons (already falling)
         if (!attacker.userData.balloons || attacker.userData.balloons.length === 0) continue;
         
-        // Get attacker's leg position (for collision detection)
-        const attackerLegsY = attacker.position.y - 1; // Bottom of player
+        // Get attacker's feet position (for collision detection)
+        const attackerFeetY = attacker.position.y - 0.5; // Bottom of player's feet
+        const attackerLegsY = attacker.position.y - 1.0; // Bottom of player's legs
         
         // Check against all other players
         for (let j = 0; j < allPlayers.length; j++) {
@@ -620,64 +517,144 @@ export function checkBalloonCollisions() {
             const dz = attacker.position.z - victim.position.z;
             const horizontalDist = Math.sqrt(dx * dx + dz * dz);
             
-            // If close enough to potentially hit balloons
-            if (horizontalDist < 2.5) {
-                // Get the victim's highest balloon (usually last in array)
-                const targetBalloon = victim.userData.balloons[victim.userData.balloons.length - 1];
-                
-                // Get balloon world position
-                const balloonWorldPos = new THREE.Vector3();
-                targetBalloon.getWorldPosition(balloonWorldPos);
-                
-                // Get balloon size (radius)
-                const balloonRadius = 0.6;
-                
-                // Check if attacker legs are at balloon height
-                const balloonBottomY = balloonWorldPos.y - balloonRadius;
-                const balloonTopY = balloonWorldPos.y + balloonRadius;
-                
-                if (
-                    attackerLegsY >= balloonBottomY - 0.5 && 
-                    attackerLegsY <= balloonTopY + 0.2 &&
-                    horizontalDist < balloonRadius + 0.5 // Player leg radius
-                ) {
-                    // Check if attacker is pressing the jump key (space)
-                    if (attacker === localPlayerEntity && keys.space) {
-                        // Balloon jump! - More powerful than regular jump
-                        attacker.userData.velocity.y = 0.3; // Strong upward boost
+            // If close enough to potentially hit balloons (increased range slightly)
+            if (horizontalDist < 2.8) {
+                // Check each balloon of the victim
+                for (let k = 0; k < victim.userData.balloons.length; k++) {
+                    const targetBalloon = victim.userData.balloons[k];
+                    
+                    // Get balloon world position
+                    const balloonWorldPos = new THREE.Vector3();
+                    targetBalloon.getWorldPosition(balloonWorldPos);
+                    
+                    // Get balloon size (radius)
+                    const balloonRadius = 0.6;
+                    
+                    // Calculate horizontal distance to this specific balloon
+                    const balloonDx = attacker.position.x - balloonWorldPos.x;
+                    const balloonDz = attacker.position.z - balloonWorldPos.z;
+                    const balloonHorizDist = Math.sqrt(balloonDx * balloonDx + balloonDz * balloonDz);
+                    
+                    // Check if attacker feet/legs are at balloon height
+                    const balloonBottomY = balloonWorldPos.y - balloonRadius;
+                    const balloonTopY = balloonWorldPos.y + balloonRadius;
+                    
+                    // Check if we're in position to pop this balloon
+                    const inVerticalRange = 
+                        (attackerFeetY >= balloonBottomY - 0.5 && attackerFeetY <= balloonTopY + 0.5) ||
+                        (attackerLegsY >= balloonBottomY - 0.5 && attackerLegsY <= balloonTopY + 0.5);
+                    
+                    const inHorizontalRange = balloonHorizDist < balloonRadius + 0.8;
+                    
+                    // Visual feedback for local player when in position to pop a balloon
+                    if (attacker === localPlayerEntity && inVerticalRange && inHorizontalRange) {
+                        // Change balloon color slightly to indicate it can be popped
+                        if (!targetBalloon.userData) targetBalloon.userData = {};
                         
-                        // Update playerVelocity for the local player
-                        if (attacker === localPlayerEntity) {
-                            playerVelocity.y = 0.3;
+                        if (!targetBalloon.userData.originalColor && targetBalloon.material) {
+                            // Store original color if not already stored
+                            targetBalloon.userData.originalColor = targetBalloon.material.color.clone();
+                            
+                            // Highlight the balloon
+                            targetBalloon.material.emissive = new THREE.Color(0xffff00);
+                            targetBalloon.material.emissiveIntensity = 0.3;
+                            
+                            // Reset after a short delay
+                            setTimeout(() => {
+                                if (targetBalloon.material) {
+                                    targetBalloon.material.emissive = new THREE.Color(0x000000);
+                                    targetBalloon.material.emissiveIntensity = 0;
+                                }
+                                targetBalloon.userData.originalColor = null;
+                            }, 100);
                         }
                         
-                        // Make the balloon bob down and then up
-                        const originalY = targetBalloon.position.y;
-                        targetBalloon.position.y -= 0.3; // Squish down
-                        
-                        // Restore position after a short delay
-                        setTimeout(() => {
-                            if (victim.userData.balloons.includes(targetBalloon)) {
-                                targetBalloon.position.y = originalY;
-                            }
-                        }, 150);
-                        
-                        // Only allow one balloon interaction per frame
-                        return;
+                        // Show HUD indicator
+                        try {
+                            // Import dynamically to avoid circular dependency
+                            import('./hud.js').then(HUD => {
+                                HUD.showBalloonTargetIndicator();
+                            });
+                        } catch (e) {
+                            console.warn("Could not show balloon target indicator:", e);
+                        }
                     }
                     
-                    // Pop the balloon (original functionality)
-                    if (popBalloon(victim, targetBalloon)) {
-                        // Small upward boost to attacker when popping
-                        attacker.userData.velocity.y += 0.08;
-                        
-                        // If attacker is local player, apply boost to playerVelocity too
-                        if (attacker === localPlayerEntity) {
-                            playerVelocity.y += 0.08;
+                    // More precise collision detection with increased vertical range
+                    if (inVerticalRange && inHorizontalRange) {
+                        // Check if attacker is pressing the jump key (space) - for bouncing without popping
+                        if (attacker === localPlayerEntity && keys.space) {
+                            // Balloon jump! - More powerful than regular jump
+                            attacker.userData.velocity.y = 0.3; // Strong upward boost
+                            
+                            // Update playerVelocity for the local player
+                            if (attacker === localPlayerEntity) {
+                                playerVelocity.y = 0.3;
+                            }
+                            
+                            // Make the balloon bob down and then up
+                            const originalY = targetBalloon.position.y;
+                            targetBalloon.position.y -= 0.3; // Squish down
+                            
+                            // Restore position after a short delay
+                            setTimeout(() => {
+                                if (victim.userData.balloons.includes(targetBalloon)) {
+                                    targetBalloon.position.y = originalY;
+                                }
+                            }, 150);
+                            
+                            // Only allow one balloon interaction per frame
+                            return;
                         }
                         
-                        // Only pop one balloon per frame
-                        return;
+                        // Determine if we should pop the balloon
+                        let shouldPop = false;
+                        
+                        // If attacker is the local player, always pop
+                        if (attacker === localPlayerEntity) {
+                            shouldPop = true;
+                        } 
+                        // If attacker is an NPC, randomly decide to pop player balloons
+                        else if (victim === localPlayerEntity && attacker !== localPlayerEntity) {
+                            // NPCs have a chance to pop player balloons when in position
+                            // Higher chance when NPC is above the player
+                            const npcAbovePlayer = attacker.position.y > victim.position.y;
+                            const popChance = npcAbovePlayer ? 0.1 : 0.03; // 10% chance when above, 3% otherwise
+                            
+                            // Random chance to pop
+                            shouldPop = Math.random() < popChance;
+                            
+                            // Debug
+                            if (shouldPop) {
+                                console.log(`NPC ${attacker.userData.name} is popping player balloon!`);
+                            }
+                        }
+                        
+                        // Pop the balloon if conditions are met
+                        if (shouldPop) {
+                            if (popBalloon(victim, targetBalloon)) {
+                                // Medium upward boost to attacker when popping
+                                attacker.userData.velocity.y = Math.max(attacker.userData.velocity.y, 0.15);
+                                
+                                // If attacker is local player, apply boost to playerVelocity too
+                                if (attacker === localPlayerEntity) {
+                                    playerVelocity.y = Math.max(playerVelocity.y, 0.15);
+                                }
+                                
+                                // Add a small horizontal push away from the victim
+                                const pushDirection = new THREE.Vector2(dx, dz).normalize();
+                                attacker.userData.velocity.x += pushDirection.x * 0.05;
+                                attacker.userData.velocity.z += pushDirection.y * 0.05;
+                                
+                                if (attacker === localPlayerEntity) {
+                                    playerVelocity.x += pushDirection.x * 0.05;
+                                    playerVelocity.z += pushDirection.y * 0.05;
+                                }
+                                
+                                // Only pop one balloon per frame
+                                return;
+                            }
+                        }
                     }
                 }
             }

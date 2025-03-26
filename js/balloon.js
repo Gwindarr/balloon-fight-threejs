@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { scene } from './scene.js';
 import { playerBody, balloons, setPlayerInvincibility } from './player.js';
 import { createPopEffect } from './effects.js';

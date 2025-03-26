@@ -7,7 +7,8 @@ export const keys = {
     a: false,
     s: false,
     d: false,
-    space: false
+    space: false,
+    shift: false
 };
 
 export const keysPressed = {
@@ -46,6 +47,9 @@ function setupKeyboardHandlers() {
             case " ":
                 keys.space = true;
                 break;
+            case "shift":
+                keys.shift = true;
+                break;
             case "r": // Release a balloon (player control)
                 releaseBalloon();
                 break;
@@ -78,6 +82,9 @@ function setupKeyboardHandlers() {
                 break;
             case " ":
                 keys.space = false;
+                break;
+            case "shift":
+                keys.shift = false;
                 break;
             case "q":
                 keysPressed.q = false;

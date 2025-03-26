@@ -1,7 +1,8 @@
 // npc.js - Create and manage NPCs
-
+import * as THREE from 'three';
 import { scene } from './scene.js';
 import { platforms } from './environment.js';
+import { allPlayers } from './player.js';
 
 // Exports
 export const npcs = [];
@@ -133,11 +134,20 @@ function createNPC(x, y, z, color, platform) {
         flapTime: 0,
         isFlapping: false,
         leftArm: leftArm,
-        rightArm: rightArm
+        rightArm: rightArm,
+        name: `NPC-${npcs.length + 1}`,
+        invincibleTime: 0,
+        isOnSurface: true,
+        currentPlatform: platform,
+        leftLeg: leftLeg,
+        rightLeg: rightLeg
     };
     
     // Add to NPCs array
     npcs.push(npc);
+    
+    // Add to allPlayers array for collision detection
+    allPlayers.push(npc);
     
     return npc;
 }

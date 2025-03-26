@@ -1,10 +1,11 @@
-import { initScene, scene, camera, renderer } from './scene.js';
+import { initScene, camera, renderer } from './scene.js';
 import { initEnvironment } from './environment.js';
 import { initPlayer, playerBody, balloons } from './player.js';
 import { initInputHandlers } from './input.js';
 import { animate } from './physics.js';
 import { initNPCs } from './npc.js';
 import { createPortal, animatePortal, checkPortalCollision, teleportPlayer } from './portal.js';
+import { initHUD } from './hud.js';
 
 // Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize player and input handlers
     initPlayer();
     initInputHandlers();
+    
+    // Initialize HUD
+    initHUD();
     
     // Create portal after the scene and environment are initialized
     createPortal(50, 15, -30);
