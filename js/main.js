@@ -1,9 +1,9 @@
 import { initScene, camera, renderer } from './scene.js';
 import { initEnvironment } from './environment.js';
-import { initPlayer, playerBody, balloons } from './player.js';
+import { initPlayer, playerBody, balloons } from './entity.js';
 import { initInputHandlers } from './input.js';
 import { animate } from './physics.js';
-import { initNPCs } from './npc.js';
+import { initNPCs } from './entity.js';
 import { createPortal, animatePortal, checkPortalCollision, teleportPlayer } from './portal.js';
 import { initHUD } from './hud.js';
 

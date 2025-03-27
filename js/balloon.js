@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
-import { playerBody, balloons, setPlayerInvincibility } from './player.js';
+import { playerBody, balloons } from './entity.js';
+import { Player } from './entity.js';
 import { createPopEffect } from './effects.js';
 
 // Exports
@@ -27,7 +28,9 @@ export function popBalloon() {
             // playSound("balloon_pop", 0.4);
             
             // Optional: Add temporary invincibility after losing a balloon
-            setPlayerInvincibility(60); // 60 frames of invincibility
+            if (playerBody && playerBody.userData) {
+                playerBody.userData.invincibleTime = 60; // 60 frames of invincibility
+            }
             
             console.log("Balloon popped! Remaining balloons:", balloons.length);
         } catch (error) {
@@ -45,6 +48,10 @@ export function releaseBalloon() {
         // Get the last balloon in the array
         const releasedBalloon = balloons.pop();
         
+        // Get balloon's current world position before removing
+        const worldPosition = new THREE.Vector3();
+        releasedBalloon.getWorldPosition(worldPosition);
+        
         // Remove balloon from player
         playerBody.remove(releasedBalloon);
         
@@ -52,13 +59,7 @@ export function releaseBalloon() {
         scene.add(releasedBalloon);
         
         // Set balloon's position in world space
-        releasedBalloon.position.copy(
-            new THREE.Vector3(
-                playerBody.position.x + releasedBalloon.position.x,
-                playerBody.position.y + releasedBalloon.position.y,
-                playerBody.position.z + releasedBalloon.position.z
-            )
-        );
+        releasedBalloon.position.copy(worldPosition);
         
         // Give the released balloon some velocity
         releasedBalloon.userData.velocity = new THREE.Vector3(
@@ -89,20 +90,24 @@ export function releaseBalloon() {
 }
 
 // Update released balloons
-export function updateReleasedBalloons() {
+export function updateReleasedBalloons(delta = 1/60) {
     for (let i = releasedBalloons.length - 1; i >= 0; i--) {
         const balloon = releasedBalloons[i];
+        if (!balloon || !balloon.userData || !balloon.userData.velocity) {
+            releasedBalloons.splice(i, 1);
+            continue;
+        }
         
         // Update balloon position based on its velocity
         balloon.position.add(balloon.userData.velocity);
         
         // Make the balloon rise and wobble a bit
-        balloon.userData.velocity.y += 0.001;
-        balloon.userData.velocity.x += (Math.random() - 0.5) * 0.001;
-        balloon.userData.velocity.z += (Math.random() - 0.5) * 0.001;
+        balloon.userData.velocity.y += 0.001 * delta * 60;
+        balloon.userData.velocity.x += (Math.random() - 0.5) * 0.001 * delta * 60;
+        balloon.userData.velocity.z += (Math.random() - 0.5) * 0.001 * delta * 60;
         
         // Rotate the balloon slightly for visual effect
-        balloon.rotation.y += 0.01;
+        balloon.rotation.y += 0.01 * delta * 60;
         
         // Remove balloons that go too high
         if (balloon.position.y > 200) {
@@ -113,11 +118,16 @@ export function updateReleasedBalloons() {
 }
 
 // Update detached balloons
-export function updateDetachedBalloons() {
+export function updateDetachedBalloons(delta = 1/60) {
     for (let i = detachedBalloons.length - 1; i >= 0; i--) {
         const balloon = detachedBalloons[i];
+        if (!balloon || !balloon.userData || !balloon.userData.velocity) {
+            detachedBalloons.splice(i, 1);
+            continue;
+        }
+        
         balloon.position.add(balloon.userData.velocity);
-        balloon.userData.velocity.y += 0.001;
+        balloon.userData.velocity.y += 0.001 * delta * 60;
         if (balloon.position.y > 50) {
             scene.remove(balloon);
             detachedBalloons.splice(i, 1);

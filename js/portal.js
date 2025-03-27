@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
-import { playerBody, playerVelocity } from './player.js';
+import { playerBody, playerVelocity } from './entity.js';
 
 export let portal;
 let portalActive = true;

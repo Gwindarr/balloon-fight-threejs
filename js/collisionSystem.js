@@ -1,7 +1,7 @@
 // Unified collision detection and response system
 import { scene } from './scene.js';
 import * as THREE from 'three'; // Add this
-import { playerVelocity } from './player.js';
+import { playerVelocity } from './entity.js';
 
 export class CollisionSystem {
     static CONSTANTS = {
@@ -38,10 +38,12 @@ export class CollisionSystem {
         // Reset fall tracking if on surface
         if (entity.userData.isOnSurface) {
             const fallDistance = entity.userData.lastHeight - entity.position.y;
-            if (fallDistance > this.CONSTANTS.PLATFORM_DEATH_THRESHOLD) {
-                entity.userData.health = 0; // Dead
-            } else if (fallDistance > this.CONSTANTS.PLATFORM_DAMAGE_THRESHOLD) {
-                entity.userData.health -= 1;
+            if (entity.userData.health !== undefined) {
+                if (fallDistance > this.CONSTANTS.PLATFORM_DEATH_THRESHOLD) {
+                    entity.userData.health = 0; // Dead
+                } else if (fallDistance > this.CONSTANTS.PLATFORM_DAMAGE_THRESHOLD) {
+                    entity.userData.health -= 1;
+                }
             }
             entity.userData.lastHeight = entity.position.y;
         } else {
@@ -54,7 +56,7 @@ export class CollisionSystem {
         const bottom = entity.position.y - this.CONSTANTS.PLAYER_HEIGHT / 2;
         if (bottom < this.CONSTANTS.GROUND_LEVEL) {
             entity.position.y = this.CONSTANTS.GROUND_LEVEL + this.CONSTANTS.PLAYER_HEIGHT / 2;
-            entity.userData.velocity.y = 0;
+            if (entity.userData.velocity) entity.userData.velocity.y = 0;
             entity.userData.isOnSurface = true;
         }
     }
@@ -88,10 +90,12 @@ export class CollisionSystem {
             if (horizontallyWithinPlatform &&
                 playerBottom <= bbox.max.y + this.CONSTANTS.PLATFORM_COLLISION_MARGIN &&
                 playerBottom >= bbox.max.y - 0.5 &&
-                entity.userData.velocity.y <= 0) {
+                entity.userData.velocity && entity.userData.velocity.y <= 0) {
 
                 entity.position.y = bbox.max.y + this.CONSTANTS.PLAYER_HEIGHT / 2;
-                entity.userData.velocity.y = 0;
+                if (entity.userData.velocity) {
+                    entity.userData.velocity.y = 0;
+                }
                 entity.userData.isOnSurface = true;
                 entity.userData.currentPlatform = platform;
                 continue;
@@ -101,10 +105,12 @@ export class CollisionSystem {
                 if (
                     playerBottom <= bbox.max.y + this.CONSTANTS.PLATFORM_COLLISION_MARGIN &&
                     playerBottom >= bbox.max.y - 0.5 &&
-                    entity.userData.velocity.y <= 0
+                    entity.userData.velocity && entity.userData.velocity.y <= 0
                 ) {
                     entity.position.y = bbox.max.y + this.CONSTANTS.PLAYER_HEIGHT / 2;
-                    entity.userData.velocity.y = 0;
+                    if (entity.userData.velocity) {
+                        entity.userData.velocity.y = 0;
+                    }
                     entity.userData.isOnSurface = true;
                     entity.userData.currentPlatform = platform;
                     continue;
@@ -113,10 +119,12 @@ export class CollisionSystem {
                 if (
                     playerTop >= bbox.min.y - this.CONSTANTS.PLATFORM_COLLISION_MARGIN &&
                     playerTop <= bbox.min.y + 0.1 &&
-                    entity.userData.velocity.y > 0
+                    entity.userData.velocity && entity.userData.velocity.y > 0
                 ) {
                     entity.position.y = bbox.min.y - this.CONSTANTS.PLAYER_HEIGHT / 2;
-                    entity.userData.velocity.y = 0;
+                    if (entity.userData.velocity) {
+                        entity.userData.velocity.y = 0;
+                    }
                     continue;
                 }
 
@@ -129,16 +137,16 @@ export class CollisionSystem {
 
                 if (minPen === penRight) {
                     entity.position.x = bbox.max.x + playerRadius;
-                    entity.userData.velocity.x = 0;
+                    if (entity.userData.velocity) entity.userData.velocity.x = 0;
                 } else if (minPen === penLeft) {
                     entity.position.x = bbox.min.x - playerRadius;
-                    entity.userData.velocity.x = 0;
+                    if (entity.userData.velocity) entity.userData.velocity.x = 0;
                 } else if (minPen === penFront) {
                     entity.position.z = bbox.max.z + playerRadius;
-                    entity.userData.velocity.z = 0;
+                    if (entity.userData.velocity) entity.userData.velocity.z = 0;
                 } else if (minPen === penBack) {
                     entity.position.z = bbox.min.z - playerRadius;
-                    entity.userData.velocity.z = 0;
+                    if (entity.userData.velocity) entity.userData.velocity.z = 0;
                 }
             }
         }
@@ -148,18 +156,23 @@ export class CollisionSystem {
         if (entity.position.z > 0 && entity.position.y < this.CONSTANTS.PLAYER_HEIGHT * 1.2) {
             const fallDistance = entity.userData.lastHeight - entity.position.y;
 
-            if (fallDistance > this.CONSTANTS.WATER_DEATH_THRESHOLD) {
-                entity.userData.health = 0; // Died from hard water fall
-            } else if (fallDistance > this.CONSTANTS.WATER_DAMAGE_THRESHOLD) {
-                entity.userData.health -= 1;
+            if (entity.userData.health !== undefined) {
+                if (fallDistance > this.CONSTANTS.WATER_DEATH_THRESHOLD) {
+                    entity.userData.health = 0; // Died from hard water fall
+                } else if (fallDistance > this.CONSTANTS.WATER_DAMAGE_THRESHOLD) {
+                    entity.userData.health -= 1;
+                }
             }
 
             entity.position.y = Math.max(
                 entity.position.y,
                 this.CONSTANTS.PLAYER_HEIGHT * 1.2
             );
-            entity.userData.velocity.multiplyScalar(this.CONSTANTS.WATER_RESISTANCE);
-            entity.userData.velocity.y += 0.005;
+            
+            if (entity.userData.velocity) {
+                entity.userData.velocity.multiplyScalar(this.CONSTANTS.WATER_RESISTANCE);
+                entity.userData.velocity.y += 0.005;
+            }
 
             entity.userData.isInWater = true;
         } else {
@@ -170,18 +183,26 @@ export class CollisionSystem {
     static checkBoundaryCollisions(entity) {
         if (entity.position.x < -this.CONSTANTS.BOUNDARY_X) {
             entity.position.x = -this.CONSTANTS.BOUNDARY_X;
-            entity.userData.velocity.x = -entity.userData.velocity.x * this.CONSTANTS.BOUNCE_FACTOR;
+            if (entity.userData.velocity) {
+                entity.userData.velocity.x = -entity.userData.velocity.x * this.CONSTANTS.BOUNCE_FACTOR;
+            }
         } else if (entity.position.x > this.CONSTANTS.BOUNDARY_X) {
             entity.position.x = this.CONSTANTS.BOUNDARY_X;
-            entity.userData.velocity.x = -entity.userData.velocity.x * this.CONSTANTS.BOUNCE_FACTOR;
+            if (entity.userData.velocity) {
+                entity.userData.velocity.x = -entity.userData.velocity.x * this.CONSTANTS.BOUNCE_FACTOR;
+            }
         }
 
         if (entity.position.z < -this.CONSTANTS.BOUNDARY_Z) {
             entity.position.z = -this.CONSTANTS.BOUNDARY_Z;
-            entity.userData.velocity.z = -entity.userData.velocity.z * this.CONSTANTS.BOUNCE_FACTOR;
+            if (entity.userData.velocity) {
+                entity.userData.velocity.z = -entity.userData.velocity.z * this.CONSTANTS.BOUNCE_FACTOR;
+            }
         } else if (entity.position.z > this.CONSTANTS.BOUNDARY_Z) {
             entity.position.z = this.CONSTANTS.BOUNDARY_Z;
-            entity.userData.velocity.z = -entity.userData.velocity.z * this.CONSTANTS.BOUNCE_FACTOR;
+            if (entity.userData.velocity) {
+                entity.userData.velocity.z = -entity.userData.velocity.z * this.CONSTANTS.BOUNCE_FACTOR;
+            }
         }
     }
 
@@ -224,20 +245,26 @@ export class CollisionSystem {
                 entity.position.z += pushZ * 0.5;
 
                 const bounceMultiplier = 0.3;
-                entity.userData.velocity.x += pushX * bounceMultiplier;
-                entity.userData.velocity.z += pushZ * bounceMultiplier;
+                if (entity.userData.velocity) {
+                    entity.userData.velocity.x += pushX * bounceMultiplier;
+                    entity.userData.velocity.z += pushZ * bounceMultiplier;
+                }
 
                 const entityHasBalloons = entity.userData.balloons?.length > 0;
                 const otherHasBalloons = otherEntity.userData.balloons?.length > 0;
 
                 if (!otherHasBalloons && entityHasBalloons && otherEntity.userData.isOnSurface) {
-                    const knockOffForce = Math.max(0.1, Math.abs(entity.userData.velocity.x) +
-                        Math.abs(entity.userData.velocity.z));
-                    otherEntity.userData.velocity.x += pushX * 0.4;
-                    otherEntity.userData.velocity.z += pushZ * 0.4;
-                    otherEntity.userData.velocity.y += 0.05;
+                    if (entity.userData.velocity && otherEntity.userData.velocity) {
+                        const knockOffForce = Math.max(0.1, Math.abs(entity.userData.velocity.x) +
+                            Math.abs(entity.userData.velocity.z));
+                        otherEntity.userData.velocity.x += pushX * 0.4;
+                        otherEntity.userData.velocity.z += pushZ * 0.4;
+                        otherEntity.userData.velocity.y += 0.05;
+                    }
                 } else if (entity.position.y < otherEntity.position.y && !entity.userData.isLocalPlayer) {
-                    entity.userData.velocity.y += 0.02;
+                    if (entity.userData.velocity) {
+                        entity.userData.velocity.y += 0.02;
+                    }
                 }
             }
         }

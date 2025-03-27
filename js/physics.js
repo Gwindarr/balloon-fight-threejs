@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { scene, camera, renderer, yaw, pitch, isPointerLocked } from './scene.js';
-import { playerBody, playerVelocity, shadow, balloons, GRAVITY, BALLOON_BUOYANCY, AIR_RESISTANCE, MAX_VELOCITY, leftArm, rightArm } from './player.js';
-import { allPlayers, checkBalloonCollisions, updatePlayers } from './player.js';
-import * as Player from './player.js';
+import { playerBody, playerVelocity, shadow, balloons, leftArm, rightArm } from './entity.js';
+import { allCharacters, checkBalloonCollisions, updateCharacters, GRAVITY, BALLOON_BUOYANCY, AIR_RESISTANCE, MAX_VELOCITY, FLAP_FORCE } from './character.js';
 import { keys, keysPressed } from './input.js';
 import { updateEnvironment } from './environment.js';
 import { updateReleasedBalloons, updateDetachedBalloons } from './balloon.js';
@@ -10,10 +9,10 @@ import { updatePopEffects } from './effects.js';
 import { animatePortal, checkPortalCollision, teleportPlayer, portal, PORTAL_RADIUS } from './portal.js';
 import { CollisionSystem } from './collisionSystem.js';
 import { updateHUD } from './hud.js';
+import { updateNPCs } from './entity.js';
 
 // Constants
 const VERTICAL_DRAG = 0.98;
-const FLAP_FORCE = 0.13;
 
 // Physics state constants
 const PLATFORMER_STATE = 'platformer';
@@ -62,7 +61,8 @@ export function animate() {
     updatePlayerPhysics();
     CollisionSystem.checkCollisions(playerBody);
     updatePlayerShadow();
-    updatePlayers();
+    updateCharacters();
+    updateNPCs();
     updateEffects();
     updateCameraPosition();
     checkBalloonCollisions();
@@ -199,10 +199,17 @@ function updatePlatformerPhysics(spaceJustPressed) {
     
     // Animate walking when on surface
     if (playerBody.userData.isOnSurface) {
-        Player.animateWalking(isMoving, movementSpeed);
+        // Find the player character in allCharacters
+        const playerCharacter = allCharacters.find(char => char.entity === playerBody);
+        if (playerCharacter) {
+            playerCharacter.animateWalking(isMoving, movementSpeed);
+        }
     } else {
         // Reset animation when in air
-        Player.animateWalking(false);
+        const playerCharacter = allCharacters.find(char => char.entity === playerBody);
+        if (playerCharacter) {
+            playerCharacter.animateWalking(false);
+        }
     }
     
     // Update coyote time counter
@@ -515,6 +522,12 @@ function updateMovementControls() {
     let movementForce = keys.shift ? RUN_MOVEMENT_FORCE : BASE_MOVEMENT_FORCE;
     let acceleration = keys.shift ? RUN_ACCELERATION : MOVEMENT_ACCELERATION;
     let maxVelocity = keys.shift ? MAX_RUN_VELOCITY : MAX_HORIZONTAL_VELOCITY;
+    
+    // Rotate player body to face movement direction
+    if (moveX !== 0 || moveZ !== 0) {
+        const angle = Math.atan2(moveX, moveZ);
+        playerBody.rotation.y = angle;
+    }
 
     // Momentum buildup when running
     if (keys.shift) {
@@ -569,24 +582,28 @@ function updateMovementControls() {
     }
     
     // Apply horizontal speed limit
-    const horizontalVelocity = new THREE.Vector2(playerVelocity.x, playerVelocity.z);
+    const horizontalVelocity = new THREE.Vector3(playerVelocity.x, 0, playerVelocity.z);
     if (horizontalVelocity.length() > maxVelocity) {
         horizontalVelocity.normalize().multiplyScalar(maxVelocity);
         playerVelocity.x = horizontalVelocity.x;
-        playerVelocity.z = horizontalVelocity.y; // THREE.Vector2 uses x,y not x,z
+        playerVelocity.z = horizontalVelocity.z;
     }
     
     // Running animation state
     if (playerBody.userData.isOnSurface) {
-        Player.setRunningState(keys.shift && (Math.abs(playerVelocity.x) > 0.1 || Math.abs(playerVelocity.z) > 0.1));
+        // Find the player character in allCharacters
+        const playerCharacter = allCharacters.find(char => char.entity === playerBody);
+        if (playerCharacter) {
+            playerCharacter.setRunningState(keys.shift && (Math.abs(playerVelocity.x) > 0.1 || Math.abs(playerVelocity.z) > 0.1));
+        }
     }
 }
 
 function updateCharactersOnPlatforms() {
-    // Get all characters (both player and NPCs)
-    const allCharacters = Player.allPlayers || [];
+    // Get all character entities
+    const characterEntities = allCharacters.map(character => character.entity);
     
-    for (const character of allCharacters) {
+    for (const character of characterEntities) {
         // Skip if character is not on a platform
         if (!character.userData || !character.userData.currentPlatform) continue;
         
@@ -614,35 +631,29 @@ function updateCharactersOnPlatforms() {
         
         // For all platform types, use the delta movement approach
         // This is more stable than recalculating positions with trig functions
-        const deltaX = platform.position.x - platform.userData.lastPosition.x;
-        const deltaY = platform.position.y - platform.userData.lastPosition.y;
-        const deltaZ = platform.position.z - platform.userData.lastPosition.z;
-        
-        // Apply platform movement to character
-        character.position.x += deltaX;
-        character.position.y += deltaY;
-        character.position.z += deltaZ;
-        
-        // For rotating platforms, also rotate the character
-        if (platform.userData.type === 'rotating_horizontal') {
-            // Rotate character to match platform rotation
-            character.rotation.y += platform.userData.rotationSpeed;
-        }
-        else if (platform.userData.type === 'rotating_vertical') {
-            // For vertical rotation, we need to update the character's height
-            // based on the platform's rotation around its center
+        if (platform.userData.lastPosition) {
+            const deltaX = platform.position.x - platform.userData.lastPosition.x;
+            const deltaY = platform.position.y - platform.userData.lastPosition.y;
+            const deltaZ = platform.position.z - platform.userData.lastPosition.z;
             
-            // This is handled by the delta movement above, but we might need
-            // to adjust the character's orientation
+            // Apply platform movement to character
+            character.position.x += deltaX;
+            character.position.y += deltaY;
+            character.position.z += deltaZ;
             
-            // We don't rotate the character itself for vertical rotation
-            // as that would make them tilt sideways
+            // For rotating platforms, also rotate the character
+            if (platform.userData.type === 'rotating_horizontal') {
+                // Rotate character to match platform rotation
+                character.rotation.y += platform.userData.rotationSpeed;
+            }
         }
     }
 }
 
 // Update player shadow
 function updatePlayerShadow() {
+    if (!shadow) return;
+    
     // Position shadow under player
     shadow.position.x = playerBody.position.x;
     shadow.position.z = playerBody.position.z;
@@ -664,9 +675,6 @@ function updatePlayerShadow() {
     if (window.environmentPlatforms && window.environmentPlatforms.length > 0) {
         platforms = [...platforms, ...window.environmentPlatforms];
     }
-    
-    // Get the number of platforms found
-    const platformCount = platforms.length;
     
     for (const platform of platforms) {
         // Skip if platform is invalid or missing geometry

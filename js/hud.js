@@ -1,5 +1,5 @@
 // hud.js
-import { playerBody, playerVelocity } from './player.js';
+import { playerBody, playerVelocity } from './entity.js';
 
 // HUD elements
 let hudContainer;
