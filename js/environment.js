@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
+import { MUSHROOM_STEM_HEIGHT, MUSHROOM_STEM_RADIUS_TOP, MUSHROOM_STEM_RADIUS_BOTTOM, MUSHROOM_CAP_RADIUS, MUSHROOM_BOOST_FORCE } from './constants.js';
 
 // Exports
 export const groundSize = 300; // Reduced from 500
@@ -1708,32 +1709,36 @@ function createBoostMushroom(x, y, z) {
     const scaleFactor = 1.5; // Increase size by 50%
     mushroomGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-    // Create a shorter, chunkier stem
-    const stemHeight = 2.0; // Slightly taller to be visible after scaling
-    const stemRadiusTop = 1.2;
-    const stemRadiusBottom = 1.8; // Wider base for a sturdy look
-    const stemGeometry = new THREE.CylinderGeometry(stemRadiusTop, stemRadiusBottom, stemHeight, 16);
+    // Create a shorter, chunkier stem using constants
+    const stemGeometry = new THREE.CylinderGeometry(
+        MUSHROOM_STEM_RADIUS_TOP, 
+        MUSHROOM_STEM_RADIUS_BOTTOM, 
+        MUSHROOM_STEM_HEIGHT, 
+        16
+    );
     const stemMaterial = new THREE.MeshPhongMaterial({
         color: 0xFFF8E7, // Creamy white, like Mario mushrooms
         shininess: 20
     });
 
     const stem = new THREE.Mesh(stemGeometry, stemMaterial);
-    stem.position.y = stemHeight / 2; // Position stem so its base is at y=0
+    stem.position.y = MUSHROOM_STEM_HEIGHT / 2; // Position stem so its base is at y=0
     stem.castShadow = true;
     stem.receiveShadow = true;
     mushroomGroup.add(stem);
 
-    // Create a larger, rounded, Mario-style cap
-    const capRadius = 4.0; // Larger cap for better proportion
-    const capGeometry = new THREE.SphereGeometry(capRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.6); // Dome-like cap
+    // Create a larger, rounded, Mario-style cap using constants
+    const capGeometry = new THREE.SphereGeometry(
+        MUSHROOM_CAP_RADIUS, 
+        32, 16, 0, Math.PI * 2, 0, Math.PI * 0.6
+    ); // Dome-like cap
     const capMaterial = new THREE.MeshPhongMaterial({
         color: 0xFF0000, // Bright Mario red
         shininess: 50 // Glossy finish
     });
 
     const cap = new THREE.Mesh(capGeometry, capMaterial);
-    cap.position.y = stemHeight; // Place cap on top of stem
+    cap.position.y = MUSHROOM_STEM_HEIGHT; // Place cap on top of stem
     cap.rotation.x = Math.PI; // Flip cap upside down
     cap.castShadow = true;
     cap.receiveShadow = true;
@@ -1753,7 +1758,7 @@ function createBoostMushroom(x, y, z) {
 
         // Position spots on the cap surface
         const angle = (i / spotCount) * Math.PI * 2 + Math.random() * 0.2; // Evenly spaced with slight variation
-        const distance = capRadius * (0.3 + Math.random() * 0.4); // Spread across cap
+        const distance = MUSHROOM_CAP_RADIUS * (0.3 + Math.random() * 0.4); // Spread across cap
         const spotX = Math.cos(angle) * distance;
         const spotZ = Math.sin(angle) * distance;
 
@@ -1764,14 +1769,17 @@ function createBoostMushroom(x, y, z) {
         cap.add(spot);
     }
 
-    // Add animation properties
+    // Add animation properties and dimensions to userData for collision detection
     mushroomGroup.userData = {
         type: 'boost_mushroom',
-        boostForce: 40, // Increase force to account for larger size
+        boostForce: MUSHROOM_BOOST_FORCE,
         boostDirection: new THREE.Vector3(0, 1, 0),
-        originalY: stemHeight,
+        originalY: MUSHROOM_STEM_HEIGHT,
         animationTime: 0,
-        animating: false
+        animating: false,
+        // Store dimensions for collision detection
+        stemHeight: MUSHROOM_STEM_HEIGHT,
+        capRadius: MUSHROOM_CAP_RADIUS
     };
 
     scene.add(mushroomGroup);

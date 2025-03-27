@@ -72,10 +72,16 @@ export function releaseBalloon() {
         releasedBalloons.push(releasedBalloon);
         
         // Give player a small upward boost only when they're not on a platform
-        if (playerBody.userData.velocity && !playerBody.userData.isOnSurface) {
-            const currentVelocity = playerBody.userData.velocity.y;
-            const minVelocity = 0.08 + (0.02 * balloons.length); // Scales with remaining balloons
-            playerBody.userData.velocity.y = Math.max(currentVelocity, minVelocity);
+        if (playerBody.userData.velocity) {
+            if (!playerBody.userData.isOnSurface) {
+                const currentVelocity = playerBody.userData.velocity.y;
+                const minVelocity = 0.08 + (0.02 * balloons.length); // Scales with remaining balloons
+                playerBody.userData.velocity.y = Math.max(currentVelocity, minVelocity);
+            } else {
+                // When on surface, reduce horizontal velocity to prevent sliding
+                playerBody.userData.velocity.x *= 0.5;
+                playerBody.userData.velocity.z *= 0.5;
+            }
         }
         
         // Play a balloon release sound

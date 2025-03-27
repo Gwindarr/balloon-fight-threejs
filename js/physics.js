@@ -212,8 +212,8 @@ function updatePlatformerPhysics(spaceJustPressed) {
             executeJump();
             jumpBufferCounter = 0;
         }
-    } else if (wasOnSurface) {
-        // Increment coyote time when just left surface
+    } else if (wasOnSurface && playerBody.position.y > WATER_LEVEL) {
+        // Only increment coyote time when above water level
         coyoteTimeCounter++;
         
         // Reset wasOnSurface after coyote time expires
@@ -256,8 +256,8 @@ function updatePlatformerPhysics(spaceJustPressed) {
             rightArm.rotation.z = 0;
         }
         
-        // Add a slight forward lean only if playerBody exists
-        if (playerBody && playerBody.userData) {
+        // Only add forward lean when falling (velocity.y < 0)
+        if (playerBody && playerBody.userData && playerVelocity.y < 0) {
             // Clear any existing timeout to prevent leaks
             if (playerBody.userData.leanTimeout) {
                 clearTimeout(playerBody.userData.leanTimeout);
