@@ -71,9 +71,8 @@ export function releaseBalloon() {
         // Add balloon to a list of released balloons to update
         releasedBalloons.push(releasedBalloon);
         
-        // Give player a small upward boost when releasing a balloon
-        // This helps prevent sudden drops when releasing balloons
-        if (playerBody.userData.velocity) {
+        // Give player a small upward boost only when they're not on a platform
+        if (playerBody.userData.velocity && !playerBody.userData.isOnSurface) {
             const currentVelocity = playerBody.userData.velocity.y;
             const minVelocity = 0.08 + (0.02 * balloons.length); // Scales with remaining balloons
             playerBody.userData.velocity.y = Math.max(currentVelocity, minVelocity);

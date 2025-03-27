@@ -9,6 +9,44 @@ export let platforms = [];
 export let movingPlatforms = [];
 export let heightMarkerClouds = [];
 export let cloudPlatforms = []; // New array for cloud platforms
+export let boost_mushrooms = []; // array for bounce muchrooms
+window.boostMushrooms = boost_mushrooms; 
+
+// Storm clouds
+function createStormClouds(group, x, y, z, width, depth) {
+    const cloudCount = 10;
+    const cloudMaterial = new THREE.MeshLambertMaterial({
+        color: 0x333333,
+        transparent: true,
+        opacity: 0.7
+    });
+
+    for (let i = 0; i < cloudCount; i++) {
+        const cloud = new THREE.Group();
+        const cloudWidth = width * (0.2 + Math.random() * 0.3);
+        const cloudDepth = depth * (0.2 + Math.random() * 0.3);
+
+        for (let j = 0; j < 6; j++) {
+            const radius = 5 + Math.random() * 5;
+            const cloudPartGeometry = new THREE.SphereGeometry(radius, 8, 8);
+            const cloudPart = new THREE.Mesh(cloudPartGeometry, cloudMaterial);
+            cloudPart.position.set(
+                (Math.random() - 0.5) * cloudWidth * 0.5,
+                (Math.random() - 0.5) * 5,
+                (Math.random() - 0.5) * cloudDepth * 0.5
+            );
+            cloud.add(cloudPart);
+        }
+
+        cloud.position.set(
+            x + (Math.random() - 0.5) * width,
+            y + Math.random() * 10,
+            z + (Math.random() - 0.5) * depth
+        );
+        group.add(cloud);
+    }
+}
+
 
 export function initEnvironment() {
     createGround();
@@ -19,9 +57,11 @@ export function initEnvironment() {
     createClouds();
     createCloudPlatforms(); // New function to create cloud platforms
     createHeightMarkers();
+    createBoostPads();
     
     // Make platforms accessible globally for collision system
     window.environmentPlatforms = [...platforms, ...cloudPlatforms];
+    window.boostMushrooms = boostMushrooms;
 }
 
 // Create ground
@@ -306,8 +346,8 @@ function createMountains() {
     // Right boundary: Volcanic landscape with rocks and lava
     createVolcanicBoundary(250, 0, 0, 1000, 50);
 
-    // Front boundary: Mystical shimmering barrier
-    createMysticalBarrier(0, 0, 250, 500, 100);
+    // Front boundary: Stormy ocean with waves as barrier
+    createStormyOcean(0, 0, 100, 500, 1000);
 }
 
 // Create a forest boundary with a natural, randomized layout
@@ -1340,34 +1380,70 @@ function createVolcanicBoundary(x, baseHeight, z, length, width) {
     scene.add(volcanicGroup);
 }
 
-// Create a mystical barrier at the front
-function createMysticalBarrier(x, baseHeight, z, width, height) {
-    const barrierGroup = new THREE.Group();
-    
-    const barrierGeometry = new THREE.PlaneGeometry(width, height, 1, 1);
-    const barrierMaterial = new THREE.MeshBasicMaterial({
-        color: 0x00CED1, // Dark turquoise
+// Create a stormy ocean at the front boundary
+function createStormyOcean(x, baseHeight, z, width, depth) {
+    const oceanGroup = new THREE.Group();
+
+    // Ocean surface
+    const oceanGeometry = new THREE.PlaneGeometry(width, depth, 64, 64); // Higher resolution for waves
+    const oceanMaterial = new THREE.MeshPhongMaterial({
+        color: 0x1C2526, // Dark stormy water color
+        shininess: 50,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.9,
         side: THREE.DoubleSide
     });
-    const barrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
-    barrier.position.set(x, baseHeight + height/2, z);
-    barrierGroup.add(barrier);
-    
-    // Add glowing effect with a second layer
-    const glowGeometry = new THREE.PlaneGeometry(width * 1.1, height * 1.1, 1, 1);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-        color: 0x00FFFF, // Cyan glow
+    const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.set(x, baseHeight + 0.3, z); // Slightly above base height
+    ocean.receiveShadow = true;
+    ocean.userData = { type: 'ocean', waveTime: 0 };
+    oceanGroup.add(ocean);
+
+    // Add storm clouds above the ocean
+    createStormClouds(oceanGroup, x, baseHeight + 30, z, width, depth);
+
+    // Add rain particles
+    createRain(oceanGroup, x, baseHeight + 20, z, width, depth);
+
+    // Add lightning effect (will be updated in updateEnvironment)
+    oceanGroup.userData = {
+        lightningTimer: Math.random() * 300, // Random initial delay (0-5 seconds at 60fps)
+        lightningActive: false,
+        lightningDuration: 10 // Frames for lightning flash
+    };
+
+    scene.add(oceanGroup);
+    return oceanGroup;
+}
+
+function createRain(group, x, y, z, width, depth) {
+    const rainCount = 1000;
+    const rainGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(rainCount * 3);
+    const velocities = new Float32Array(rainCount * 3);
+
+    for (let i = 0; i < rainCount; i++) {
+        const i3 = i * 3;
+        positions[i3] = x + (Math.random() - 0.5) * width;
+        positions[i3 + 1] = y + Math.random() * 20; // Start high
+        positions[i3 + 2] = z + (Math.random() - 0.5) * depth;
+        velocities[i3] = 0; // X velocity
+        velocities[i3 + 1] = -(0.5 + Math.random() * 0.5); // Fall speed
+        velocities[i3 + 2] = 0; // Z velocity
+    }
+
+    rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const rainMaterial = new THREE.PointsMaterial({
+        color: 0xAAAAAA,
+        size: 0.2,
         transparent: true,
-        opacity: 0.1,
-        side: THREE.DoubleSide
+        opacity: 0.6
     });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.position.set(x, baseHeight + height/2, z);
-    barrierGroup.add(glow);
-    
-    scene.add(barrierGroup);
+
+    const rain = new THREE.Points(rainGeometry, rainMaterial);
+    rain.userData = { velocities: velocities, baseHeight: y - 20 };
+    group.add(rain);
 }
 
 // Create a mountain range with multiple peaks
@@ -1605,6 +1681,155 @@ function createCloudPlatform(x, y, z) {
     return cloudPlatform;
 }
 
+// Create boost pads that help players jump higher (mushroom version)
+function createBoostPads() {
+    console.log("Creating boost pads...");
+    const boostPadPositions = [
+        { x: 15, y: 0, z: 15 },
+        { x: -15, y: 0, z: -15 },
+        { x: -15, y: 0, z: 15 },
+        { x: 15, y: 0, z: -15 },
+        { x: 0, y: 0, z: 0 }
+    ];
+    
+    for (const pos of boostPadPositions) {
+        const boostMushroom = createBoostMushroom(pos.x, pos.y, pos.z);
+        // We don't add these to platforms because they're not meant to be stood on
+        // They just apply a force on collision
+    }
+}
+
+// Create a larger bouncy mushroom inspired by Super Mario
+function createBoostMushroom(x, y, z) {
+    const mushroomGroup = new THREE.Group();
+    mushroomGroup.position.set(x, y, z);
+
+    // Scale up the entire mushroom for a larger appearance
+    const scaleFactor = 1.5; // Increase size by 50%
+    mushroomGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+    // Create a shorter, chunkier stem
+    const stemHeight = 2.0; // Slightly taller to be visible after scaling
+    const stemRadiusTop = 1.2;
+    const stemRadiusBottom = 1.8; // Wider base for a sturdy look
+    const stemGeometry = new THREE.CylinderGeometry(stemRadiusTop, stemRadiusBottom, stemHeight, 16);
+    const stemMaterial = new THREE.MeshPhongMaterial({
+        color: 0xFFF8E7, // Creamy white, like Mario mushrooms
+        shininess: 20
+    });
+
+    const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+    stem.position.y = stemHeight / 2; // Position stem so its base is at y=0
+    stem.castShadow = true;
+    stem.receiveShadow = true;
+    mushroomGroup.add(stem);
+
+    // Create a larger, rounded, Mario-style cap
+    const capRadius = 4.0; // Larger cap for better proportion
+    const capGeometry = new THREE.SphereGeometry(capRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.6); // Dome-like cap
+    const capMaterial = new THREE.MeshPhongMaterial({
+        color: 0xFF0000, // Bright Mario red
+        shininess: 50 // Glossy finish
+    });
+
+    const cap = new THREE.Mesh(capGeometry, capMaterial);
+    cap.position.y = stemHeight; // Place cap on top of stem
+    cap.rotation.x = Math.PI; // Flip cap upside down
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    mushroomGroup.add(cap);
+
+    // Add larger, flatter white spots (Mario-style)
+    const spotCount = 5; // Fewer, larger spots
+    for (let i = 0; i < spotCount; i++) {
+        const spotSize = 1.0 + Math.random() * 0.5; // Even larger spots for visibility
+        const spotGeometry = new THREE.CircleGeometry(spotSize, 16); // Flat circles
+        const spotMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFFFFFF,
+            side: THREE.DoubleSide
+        });
+
+        const spot = new THREE.Mesh(spotGeometry, spotMaterial);
+
+        // Position spots on the cap surface
+        const angle = (i / spotCount) * Math.PI * 2 + Math.random() * 0.2; // Evenly spaced with slight variation
+        const distance = capRadius * (0.3 + Math.random() * 0.4); // Spread across cap
+        const spotX = Math.cos(angle) * distance;
+        const spotZ = Math.sin(angle) * distance;
+
+        // Place on cap surface with slight elevation
+        spot.position.set(spotX, 0.1, spotZ);
+        spot.rotation.x = Math.PI / 2; // Align with cap surface
+        spot.lookAt(cap.position.clone().add(new THREE.Vector3(0, 1, 0))); // Orient toward top
+        cap.add(spot);
+    }
+
+    // Add animation properties
+    mushroomGroup.userData = {
+        type: 'boost_mushroom',
+        boostForce: 40, // Increase force to account for larger size
+        boostDirection: new THREE.Vector3(0, 1, 0),
+        originalY: stemHeight,
+        animationTime: 0,
+        animating: false
+    };
+
+    scene.add(mushroomGroup);
+    boostMushrooms.push(mushroomGroup);
+
+    return mushroomGroup;
+}
+
+// Updated bounce animation for larger mushrooms
+function updateBoostMushrooms() {
+    for (const mushroom of boostMushrooms) {
+        if (mushroom.userData.animating) {
+            mushroom.userData.animationTime += 0.15; // Keep animation snappy
+
+            const cap = mushroom.children[1]; // Cap
+            const stem = mushroom.children[0]; // Stem
+            const animProgress = mushroom.userData.animationTime;
+
+            if (animProgress < 0.2) {
+                // Quick squash phase
+                const squashFactor = 1 - Math.sin(animProgress * Math.PI / 0.2) * 0.5;
+                cap.scale.set(1 + (1 - squashFactor) * 0.8, squashFactor, 1 + (1 - squashFactor) * 0.8);
+                stem.scale.set(1 + (1 - squashFactor) * 0.4, squashFactor, 1 + (1 - squashFactor) * 0.4);
+            } 
+            else if (animProgress < 0.5) {
+                // Exaggerated stretch phase
+                const stretchProgress = (animProgress - 0.2) / 0.3;
+                const stretchFactor = 1 + Math.sin(stretchProgress * Math.PI) * 0.6;
+                cap.scale.set(2 - stretchFactor * 0.8, stretchFactor * 1.2, 2 - stretchFactor * 0.8);
+                stem.scale.set(1, stretchFactor * 1.4, 1);
+            } 
+            else if (animProgress < 0.7) {
+                // Quick recovery
+                const recoveryProgress = (animProgress - 0.5) / 0.2;
+                const recoveryFactor = 1 - (1 - recoveryProgress) * (1 - recoveryProgress);
+                cap.scale.lerp(new THREE.Vector3(1, 1, 1), recoveryFactor);
+                stem.scale.lerp(new THREE.Vector3(1, 1, 1), recoveryFactor);
+            } 
+            else {
+                // End animation
+                cap.scale.set(1, 1, 1);
+                stem.scale.set(1, 1, 1);
+                mushroom.userData.animating = false;
+                mushroom.userData.animationTime = 0;
+            }
+        }
+    }
+}
+
+
+// Add this function to trigger the bounce animation
+export function triggerMushroomBounce(mushroom) {
+    if (!mushroom.userData.animating) {
+        mushroom.userData.animating = true;
+        mushroom.userData.animationTime = 0;
+    }
+}
+
 // Create height markers
 function createHeightMarkers() {
     for (let height = 10; height <= 100; height += 10) {
@@ -1685,6 +1910,71 @@ export function updateEnvironment() {
             }
         }
     }
+
+    // Update ocean waves
+    scene.traverse(function(object) {
+        if (object.userData.type === 'ocean') {
+            object.userData.waveTime += 0.02;
+            const vertices = object.geometry.attributes.position;
+            for (let i = 0; i < vertices.count; i++) {
+                const x = vertices.getX(i);
+                const z = vertices.getZ(i);
+                vertices.setY(i,
+                    Math.sin(x * 0.1 + object.userData.waveTime) * 1.5 +
+                    Math.cos(z * 0.15 + object.userData.waveTime * 1.2) * 1.5
+                );
+            }
+            vertices.needsUpdate = true;
+        }
+    });
+
+    // Update rain
+    scene.traverse(function(object) {
+        if (object instanceof THREE.Points && object.userData.velocities) {
+            const positions = object.geometry.attributes.position;
+            const velocities = object.userData.velocities;
+            for (let i = 0; i < positions.count; i++) {
+                const i3 = i * 3;
+                positions.array[i3] += velocities[i3];
+                positions.array[i3 + 1] += velocities[i3 + 1];
+                positions.array[i3 + 2] += velocities[i3 + 2];
+
+                // Reset raindrop if it falls below base height
+                if (positions.array[i3 + 1] < object.userData.baseHeight) {
+                    positions.array[i3 + 1] = object.userData.baseHeight + 20;
+                }
+            }
+            positions.needsUpdate = true;
+        }
+    });
+
+    // Update lightning
+    scene.traverse(function(object) {
+        if (object.userData.lightningTimer !== undefined) {
+            object.userData.lightningTimer--;
+            if (object.userData.lightningTimer <= 0) {
+                if (!object.userData.lightningActive) {
+                    // Start lightning flash
+                    object.userData.lightningActive = true;
+                    object.userData.lightningTimer = object.userData.lightningDuration;
+
+                    // Add temporary light
+                    const lightningLight = new THREE.PointLight(0xFFFFFF, 2, 500);
+                    lightningLight.position.set(
+                        object.position.x + (Math.random() - 0.5) * 500,
+                        object.position.y + 30,
+                        object.position.z + (Math.random() - 0.5) * 500
+                    );
+                    scene.add(lightningLight);
+                    setTimeout(() => scene.remove(lightningLight), 150); // Remove after 150ms
+                } else {
+                    // End lightning flash
+                    object.userData.lightningActive = false;
+                    object.userData.lightningTimer = 60 + Math.random() * 240; // Next flash in 1-5 seconds
+                }
+            }
+        }
+    });
     
     // Update cloud platforms
     if (cloudPlatforms && cloudPlatforms.length > 0) {

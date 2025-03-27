@@ -2,6 +2,7 @@
 import { scene } from './scene.js';
 import * as THREE from 'three'; // Add this
 import { playerVelocity } from './entity.js';
+import { triggerMushroomBounce } from './environment.js'; // Import the function to trigger mushroom bounce animation
 
 export class CollisionSystem {
     static CONSTANTS = {
@@ -13,7 +14,7 @@ export class CollisionSystem {
         WATER_RESISTANCE: 0.92,
         BOUNDARY_X: 200,
         BOUNDARY_Z: 200,
-        PLATFORM_COLLISION_MARGIN: 0.15,
+        PLATFORM_COLLISION_MARGIN: 0.05, // Reduced margin for stricter landing
         PLATFORMER_COYOTE_TIME: 6,
         PLATFORM_DAMAGE_THRESHOLD: 6,
         WATER_DAMAGE_THRESHOLD: 10,
@@ -24,17 +25,25 @@ export class CollisionSystem {
     static checkCollisions(entity) {
         entity.userData.isOnSurface = false;
         entity.userData.currentPlatform = null;
-
+    
         if (!entity.userData.lastHeight) {
             entity.userData.lastHeight = entity.position.y;
         }
-
+    
         this.checkGroundCollision(entity);
-        this.checkPlatformCollisions(entity);
+        
+        // Check special platforms first (like bounce mushrooms)
+        const bouncedOnMushroom = this.checkSpecialPlatformCollisions(entity);
+        
+        // Only check regular platforms if we didn't bounce on a mushroom
+        if (!bouncedOnMushroom) {
+            this.checkPlatformCollisions(entity);
+        }
+        
         this.checkWaterCollision(entity);
         this.checkBoundaryCollisions(entity);
         this.checkEntityCollisions(entity);
-
+    
         // Reset fall tracking if on surface
         if (entity.userData.isOnSurface) {
             const fallDistance = entity.userData.lastHeight - entity.position.y;
@@ -88,11 +97,11 @@ export class CollisionSystem {
                 playerMaxZ >= bbox.min.z && playerMinZ <= bbox.max.z;
 
             if (horizontallyWithinPlatform &&
-                playerBottom <= bbox.max.y + this.CONSTANTS.PLATFORM_COLLISION_MARGIN &&
-                playerBottom >= bbox.max.y - 0.5 &&
-                entity.userData.velocity && entity.userData.velocity.y <= 0) {
+                playerBottom <= bbox.max.y + this.CONSTANTS.PLATFORM_COLLISION_MARGIN && // Check if bottom is just above platform
+                playerBottom >= bbox.max.y - 0.5 && // Check if bottom is not too far below (prevents snapping up)
+                entity.userData.velocity && entity.userData.velocity.y <= 0.01) { // Allow slight upward velocity for landing
 
-                entity.position.y = bbox.max.y + this.CONSTANTS.PLAYER_HEIGHT / 2;
+                entity.position.y = bbox.max.y + this.CONSTANTS.PLAYER_HEIGHT / 2; // Snap position to top of platform
                 if (entity.userData.velocity) {
                     entity.userData.velocity.y = 0;
                 }
@@ -105,7 +114,7 @@ export class CollisionSystem {
                 if (
                     playerBottom <= bbox.max.y + this.CONSTANTS.PLATFORM_COLLISION_MARGIN &&
                     playerBottom >= bbox.max.y - 0.5 &&
-                    entity.userData.velocity && entity.userData.velocity.y <= 0
+                    entity.userData.velocity && entity.userData.velocity.y <= 0.01 // Allow slight upward velocity
                 ) {
                     entity.position.y = bbox.max.y + this.CONSTANTS.PLAYER_HEIGHT / 2;
                     if (entity.userData.velocity) {
@@ -150,6 +159,61 @@ export class CollisionSystem {
                 }
             }
         }
+    }
+
+    // Add this to your CollisionSystem class
+    static checkSpecialPlatformCollisions(entity) {
+        const playerRadius = this.CONSTANTS.PLAYER_RADIUS;
+        const playerBottom = entity.position.y - this.CONSTANTS.PLAYER_HEIGHT / 2;
+        
+        // Get all mushroom platforms from the scene
+        const boostMushrooms = window.boostMushrooms || [];
+        
+        for (const mushroom of boostMushrooms) {
+            // Check if mushroom exists and has valid properties
+            if (!mushroom || !mushroom.position) continue;
+            
+            // Create a bounding box for the mushroom cap
+            const mushroomCapRadius = 3; // Same as in createBoostMushroom
+            const cap = mushroom.children[1]; // The cap is the second child
+            const capHeight = 1.5; // Same as in createBoostMushroom
+            const stemHeight = 1.5; // Same as in createBoostMushroom
+            
+            // Calculate cap position in world space
+            const capPosition = new THREE.Vector3();
+            cap.getWorldPosition(capPosition);
+            
+            // Calculate distances
+            const dx = entity.position.x - mushroom.position.x;
+            const dz = entity.position.z - mushroom.position.z;
+            const horizontalDistSquared = dx * dx + dz * dz;
+            
+            // Check if entity is above the mushroom cap
+            if (horizontalDistSquared < mushroomCapRadius * mushroomCapRadius) {
+                const mushroomTopY = mushroom.position.y + stemHeight + 0.2; // Small buffer
+                
+                // If landing on top of the mushroom and moving down
+                if (playerBottom <= mushroomTopY + 0.5 && 
+                    playerBottom >= mushroomTopY - 0.5 && 
+                    entity.userData.velocity.y <= 0) {
+                    
+                    // Apply bounce force
+                    entity.userData.velocity.y = mushroom.userData.boostForce;
+                    
+                    // Trigger mushroom bounce animation
+                    if (typeof triggerMushroomBounce === 'function') {
+                        triggerMushroomBounce(mushroom);
+                    } else if (!mushroom.userData.animating) {
+                        mushroom.userData.animating = true;
+                        mushroom.userData.animationTime = 0;
+                    }
+                    
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 
     static checkWaterCollision(entity) {

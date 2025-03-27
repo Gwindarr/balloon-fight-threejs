@@ -99,6 +99,9 @@ export function initPlayer() {
   const player = new Player(0, 0.5, 0, 0xff0000);
   playerBody = player.entity;
   
+  // Set player ID
+  playerBody.userData.id = player.userData.id;
+  
   // Add balloons
   player.addBalloons(3, [0xff0000, 0x0000ff, 0x00ff00]);
   balloons = player.balloons;
@@ -234,38 +237,51 @@ export const npcs = [];
 
 // Create a set of NPCs on platforms
 export function initNPCs() {
+  console.log("Initializing NPCs");
+  
   // Create an NPC on the first platform
   if (platforms.length > 0) {
-    createNPC(
+    console.log("Creating NPC 1 on platform 0");
+    const npc1 = createNPC(
       platforms[0].position.x,
       platforms[0].position.y + 1, // 1 unit above platform
       platforms[0].position.z,
       0xff0000, // Red
-      platforms[0] // The platform this NPC is on
+      platforms[0], // The platform this NPC is on
+      "NPC1"
     );
+    console.log("Created NPC 1:", npc1);
   }
   
   // Create an NPC on the third platform if it exists
   if (platforms.length > 2) {
-    createNPC(
+    console.log("Creating NPC 2 on platform 2");
+    const npc2 = createNPC(
       platforms[2].position.x,
       platforms[2].position.y + 1,
       platforms[2].position.z,
       0x00ff00, // Green
-      platforms[2]
+      platforms[2],
+      "NPC2"
     );
+    console.log("Created NPC 2:", npc2);
   }
   
   // Create an NPC on the fifth platform if it exists
   if (platforms.length > 4) {
-    createNPC(
+    console.log("Creating NPC 3 on platform 4");
+    const npc3 = createNPC(
       platforms[4].position.x,
       platforms[4].position.y + 1,
       platforms[4].position.z,
       0x0000ff, // Blue
-      platforms[4]
+      platforms[4],
+      "NPC3"
     );
+    console.log("Created NPC 3:", npc3);
   }
+  
+  console.log("NPCs initialized, total characters:", allCharacters.length);
 }
 
 // Create a single NPC

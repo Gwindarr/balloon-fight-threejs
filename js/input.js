@@ -18,9 +18,20 @@ export const keysPressed = {
 
 export let cameraDistance = 10;
 export let initialTouchDistance = 0;
+export let isMobileDevice = false;
+let joystick = null;
 
 // Initialize all input handlers
 export function initInputHandlers() {
+    // Check if it's a mobile device
+    isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobileDevice) {
+        document.getElementById('mobile-controls').style.display = 'block';
+        document.getElementById('controls').style.display = 'none';
+        setupMobileControls();
+    }
+    
     setupKeyboardHandlers();
     setupMouseHandlers();
     setupTouchHandlers();
@@ -142,8 +153,109 @@ function setupTouchHandlers() {
     });
 }
 
+// Setup nipplejs mobile controls
+function setupMobileControls() {
+    // Create joystick
+    const joystickZone = document.getElementById('joystick-zone');
+    // Use the global nipplejs object instead of importing it
+    joystick = window.nipplejs.create({
+        zone: joystickZone,
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'white',
+        size: 120,
+        lockX: false,
+        lockY: false
+    });
+    
+    // Joystick move event
+    joystick.on('move', (evt, data) => {
+        // Reset movement keys
+        keys.w = false;
+        keys.a = false;
+        keys.s = false;
+        keys.d = false;
+        
+        // Convert joystick angle to directional keys
+        const angle = data.angle.radian;
+        const force = Math.min(1, data.force);
+        
+        // Only trigger movement if force is above threshold
+        if (force > 0.2) {
+            // Determine direction based on angle
+            if (angle >= 0 && angle < Math.PI/4 || angle >= 7*Math.PI/4 && angle < 2*Math.PI) {
+                // Right
+                keys.d = true;
+            } else if (angle >= Math.PI/4 && angle < 3*Math.PI/4) {
+                // Up
+                keys.w = true;
+            } else if (angle >= 3*Math.PI/4 && angle < 5*Math.PI/4) {
+                // Left
+                keys.a = true;
+            } else if (angle >= 5*Math.PI/4 && angle < 7*Math.PI/4) {
+                // Down
+                keys.s = true;
+            }
+            
+            // Diagonal directions
+            if (angle >= Math.PI/8 && angle < 3*Math.PI/8) {
+                // Up-Right
+                keys.w = true;
+                keys.d = true;
+            } else if (angle >= 3*Math.PI/8 && angle < 5*Math.PI/8) {
+                // Up-Left
+                keys.w = true;
+                keys.a = true;
+            } else if (angle >= 5*Math.PI/8 && angle < 7*Math.PI/8) {
+                // Down-Left
+                keys.s = true;
+                keys.a = true;
+            } else if (angle >= 7*Math.PI/8 && angle < 9*Math.PI/8) {
+                // Down-Right
+                keys.s = true;
+                keys.d = true;
+            }
+        }
+    });
+    
+    // Joystick end event
+    joystick.on('end', () => {
+        // Stop all movement when joystick is released
+        keys.w = false;
+        keys.a = false;
+        keys.s = false;
+        keys.d = false;
+    });
+    
+    // Jump button event
+    const jumpButton = document.getElementById('jump-button');
+    
+    // Use both touchstart and mousedown for better responsiveness
+    jumpButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys.space = true;
+    });
+    
+    jumpButton.addEventListener('touchend', () => {
+        keys.space = false;
+    });
+    
+    // Action button event (release balloon)
+    const actionButton = document.getElementById('action-button');
+    
+    actionButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        releaseBalloon();
+    });
+}
+
 // Setup pointer lock for camera control
 function setupPointerLock() {
+    // Skip pointer lock setup on mobile devices
+    if (isMobileDevice) {
+        return;
+    }
+    
     renderer.domElement.addEventListener("click", () => {
         if (!isPointerLocked) {
             renderer.domElement.requestPointerLock();

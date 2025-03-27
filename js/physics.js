@@ -10,6 +10,8 @@ import { animatePortal, checkPortalCollision, teleportPlayer, portal, PORTAL_RAD
 import { CollisionSystem } from './collisionSystem.js';
 import { updateHUD } from './hud.js';
 import { updateNPCs } from './entity.js';
+import { updateMultiplayer } from './multiplayer.js';
+
 
 // Constants
 const VERTICAL_DRAG = 0.98;
@@ -35,6 +37,8 @@ const BALLOON_JUMP_FORCE_PER_BALLOON = 0.06;
 const BALLOON_AIR_CONTROL = 1.2;
 const BALLOON_GROUND_FRICTION = 0.85;
 
+let lastTime = 0;
+
 // Current physics state
 let currentPhysicsState = BALLOON_STATE;
 
@@ -55,6 +59,12 @@ let kickCooldownTimer = 0; // Added to fix potential future error
 // Animation loop
 export function animate() {
     requestAnimationFrame(animate);
+
+    // Calculate deltaTime
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+    lastTime = currentTime;
+    
     updateEnvironment();
     updateCharactersOnPlatforms();
     updatePhysicsState();
@@ -66,6 +76,7 @@ export function animate() {
     updateEffects();
     updateCameraPosition();
     checkBalloonCollisions();
+    updateMultiplayer(deltaTime);
     
     animatePortal();
     let hudMessage = "";
@@ -105,35 +116,12 @@ function handleStateTransition(oldState, newState) {
     // Specific transitions
     if (oldState === BALLOON_STATE && newState === PLATFORMER_STATE) {
         // Transitioning from balloon to platformer
-        // Change player color to indicate platformer mode
-        const body = playerBody.children.find(child => 
-            child.geometry && child.geometry.type === 'CylinderGeometry' && 
-            child.position.y === 1
-        );
-        
-        if (body && body.material) {
-            // Save original color
-            if (!body.userData) body.userData = {};
-            body.userData.originalColor = body.material.color.clone();
-            
-            // Change to platformer color (blue)
-            body.material.color.set(0x0066ff);
-        }
+        // No color change needed
     } 
     else if (oldState === PLATFORMER_STATE && newState === BALLOON_STATE) {
         // Transitioning from platformer to balloon
         // Give a small upward boost when gaining balloons
         playerVelocity.y = Math.max(playerVelocity.y, 0.1);
-        
-        // Restore original player color
-        const body = playerBody.children.find(child => 
-            child.geometry && child.geometry.type === 'CylinderGeometry' && 
-            child.position.y === 1
-        );
-        
-        if (body && body.material && body.userData && body.userData.originalColor) {
-            body.material.color.copy(body.userData.originalColor);
-        }
     }
 }
 

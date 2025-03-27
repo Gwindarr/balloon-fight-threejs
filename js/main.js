@@ -6,6 +6,7 @@ import { animate } from './physics.js';
 import { initNPCs } from './entity.js';
 import { createPortal, animatePortal, checkPortalCollision, teleportPlayer } from './portal.js';
 import { initHUD } from './hud.js';
+import { initMultiplayer, updateMultiplayer, sendChatMessage } from './multiplayer.js';
 
 // Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,8 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initNPCs();
     
     // Initialize player and input handlers
-    initPlayer();
+    const player = initPlayer();
     initInputHandlers();
+    
+    // Initialize multiplayer
+    import('./multiplayer.js').then(({ initMultiplayer }) => {
+        initMultiplayer(player);
+    });
     
     // Initialize HUD
     initHUD();
