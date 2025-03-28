@@ -1686,11 +1686,17 @@ function createCloudPlatform(x, y, z) {
 function createBoostPads() {
     console.log("Creating boost pads...");
     const boostPadPositions = [
-        { x: 15, y: 0, z: 15 },
-        { x: -15, y: 0, z: -15 },
-        { x: -15, y: 0, z: 15 },
-        { x: 15, y: 0, z: -15 },
-        { x: 0, y: 0, z: 0 }
+        // Spread mushrooms out more - wider distribution
+        { x: 25, y: 0, z: 25 },
+        { x: -25, y: 0, z: -25 },
+        { x: -25, y: 0, z: 25 },
+        { x: 25, y: 0, z: -25 },
+        { x: 0, y: 0, z: 0 },
+        // Add mushrooms in water areas
+        { x: 10, y: 0, z: 10 },
+        { x: -10, y: 0, z: -10 },
+        { x: -10, y: 0, z: 10 },
+        { x: 10, y: 0, z: -10 }
     ];
     
     for (const pos of boostPadPositions) {
@@ -1703,10 +1709,13 @@ function createBoostPads() {
 // Create a larger bouncy mushroom inspired by Super Mario
 function createBoostMushroom(x, y, z) {
     const mushroomGroup = new THREE.Group();
-    mushroomGroup.position.set(x, y, z);
+    
+    // Raise mushrooms slightly above ground/water level for better visibility
+    const heightOffset = 0.5; // Make mushrooms stick up more from water
+    mushroomGroup.position.set(x, y + heightOffset, z);
 
     // Scale up the entire mushroom for a larger appearance
-    const scaleFactor = 1.5; // Increase size by 50%
+    const scaleFactor = 1.7; // Increase size by 70% for better visibility
     mushroomGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
     // Create a shorter, chunkier stem using constants
@@ -1733,8 +1742,10 @@ function createBoostMushroom(x, y, z) {
         32, 16, 0, Math.PI * 2, 0, Math.PI * 0.6
     ); // Dome-like cap
     const capMaterial = new THREE.MeshPhongMaterial({
-        color: 0xFF0000, // Bright Mario red
-        shininess: 50 // Glossy finish
+        color: 0xFF3333, // Brighter red for better visibility
+        emissive: 0x550000, // Add a slight glow
+        shininess: 80, // More glossy finish for water reflections
+        specular: 0xffffff // Add specular highlights
     });
 
     const cap = new THREE.Mesh(capGeometry, capMaterial);

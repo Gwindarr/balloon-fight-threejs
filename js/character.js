@@ -2,6 +2,19 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
 import { createPopEffect } from './effects.js';
+import {
+  GRAVITY,
+  BALLOON_BUOYANCY,
+  VERTICAL_DRAG,
+  MAX_VELOCITY,
+  AIR_RESISTANCE,
+  FLAP_FORCE,
+  FLAP_COOLDOWN,
+  MOVEMENT_FORCE
+} from './constants.js';
+
+// Array to hold all character instances
+export const allCharacters = [];
 
 // Character class to be extended by Player and NPC
 export class Character {
@@ -293,6 +306,14 @@ export class Character {
 
   // Animate walking
   animateWalking(isMoving, speed = 1) {
+    // Skip falling animation if jumping
+    if (this.userData.isJumping) {
+      // Keep arms in neutral position during jump
+      if (this.userData.leftArm) this.userData.leftArm.rotation.z = Math.PI / 4;
+      if (this.userData.rightArm) this.userData.rightArm.rotation.z = -Math.PI / 4;
+      return;
+    }
+
     // Only animate if player is moving and limbs exist
     if (!isMoving) {
       // Reset to default pose when not moving
@@ -370,19 +391,6 @@ export class Character {
     }
   }
 }
-
-// Static collection of all characters for collision detection
-export const allCharacters = [];
-
-// Constants moved from player.js for reuse
-export const GRAVITY = 0.012;
-export const BALLOON_BUOYANCY = 0.006;
-export const VERTICAL_DRAG = 0.98;
-export const MAX_VELOCITY = 0.3;
-export const AIR_RESISTANCE = 0.98;
-export const FLAP_FORCE = 0.13;
-export const FLAP_COOLDOWN = 8;
-export const MOVEMENT_FORCE = 0.008;
 
 // Check for balloon collisions between characters
 export function checkBalloonCollisions() {
@@ -542,9 +550,19 @@ export function checkBalloonCollisions() {
             // Determine if we should pop the balloon
             let shouldPop = false;
 
-            // If attacker is the local player, always pop
-            if (attacker.userData.isLocalPlayer) {
+            // If attacker is local or remote player, always pop
+            if (attacker.userData.isLocalPlayer || attacker.userData.isRemotePlayer) {
               shouldPop = true;
+              
+              // Send network event through multiplayer system
+              if (window.multiplayerSocket && window.multiplayerSocket.readyState === WebSocket.OPEN) {
+                window.multiplayerSocket.send(JSON.stringify({
+                  type: 'balloon_pop',
+                  attackerId: attacker.userData.id,
+                  victimId: victim.userData.id,
+                  balloonIndex: k
+                }));
+              }
             }
             // If attacker is an NPC, randomly decide to pop player balloons
             else if (victim.userData.isLocalPlayer && !attacker.userData.isLocalPlayer) {
@@ -567,6 +585,15 @@ export function checkBalloonCollisions() {
               const charAttacker = allCharacters[i];
               const charVictim = allCharacters[j];
               if (charVictim.popBalloon(targetBalloon)) {
+                // Send network event through multiplayer system
+                if (attacker.userData.isLocalPlayer && window.multiplayerSocket && window.multiplayerSocket.readyState === WebSocket.OPEN) {
+                  window.socket.send(JSON.stringify({
+                    type: 'balloon_pop',
+                    attackerId: attacker.userData.id,
+                    victimId: victim.userData.id,
+                    balloonIndex: k
+                  }));
+                }
                 // Medium upward boost to attacker when popping
                 attacker.userData.velocity.y = Math.max(attacker.userData.velocity.y, 0.15);
 
@@ -586,7 +613,6 @@ export function checkBalloonCollisions() {
   }
 }
 
-// Update all characters' invincibility state
 export function updateCharacters() {
   for (let i = allCharacters.length - 1; i >= 0; i--) {
     const character = allCharacters[i];
@@ -595,30 +621,8 @@ export function updateCharacters() {
     // Update invincibility
     character.updateInvincibility();
 
-    // If character has no balloons, make them fall
-    if (character.balloons.length === 0) {
-      // Apply gravity
-      if (entity.userData && entity.userData.velocity) {
-        entity.userData.velocity.y -= GRAVITY;
-        entity.position.y += entity.userData.velocity.y;
-      }
-
-      // Add some spinning as they fall
-      if (entity) {
-        entity.rotation.x = (entity.rotation.x || 0) + 0.02;
-        entity.rotation.z = (entity.rotation.z || 0) + 0.03;
-      }
-
-      // If character falls below ground, remove them
-      if (entity && entity.position && entity.position.y < -10) {
-        scene.remove(entity);
-        allCharacters.splice(i, 1);
-
-        // Characters are respawned in their respective managers (Player/NPC)
-      }
-    }
-    // Otherwise animate their balloons
-    else {
+    // Animate balloons if they exist - buoyancy is applied in physics.js
+    if (character.balloons.length > 0) {
       character.animateBalloons();
     }
   }

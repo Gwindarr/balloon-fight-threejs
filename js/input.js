@@ -11,9 +11,11 @@ export const keys = {
     shift: false
 };
 
+// Track previous state of keys to detect when they're first pressed
 export const keysPressed = {
     q: false,
-    e: false
+    e: false,
+    space: false
 };
 
 export let cameraDistance = 10;
@@ -42,6 +44,11 @@ export function initInputHandlers() {
 function setupKeyboardHandlers() {
     // Key down event
     window.addEventListener("keydown", (event) => {
+        // Prevent default space bar action (scrolling page)
+        if (event.key === " " || event.code === "Space") {
+            event.preventDefault();
+        }
+        
         switch (event.key.toLowerCase()) {
             case "w":
                 keys.w = true;
@@ -56,6 +63,8 @@ function setupKeyboardHandlers() {
                 keys.d = true;
                 break;
             case " ":
+                // Log when space is pressed
+                console.log("Space key down detected");
                 keys.space = true;
                 break;
             case "shift":
@@ -92,6 +101,7 @@ function setupKeyboardHandlers() {
                 keys.d = false;
                 break;
             case " ":
+                console.log("Space key up detected");
                 keys.space = false;
                 break;
             case "shift":

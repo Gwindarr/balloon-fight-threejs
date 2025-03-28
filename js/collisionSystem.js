@@ -26,6 +26,11 @@ export class CollisionSystem {
         if (!entity.userData.lastHeight) {
             entity.userData.lastHeight = entity.position.y;
         }
+        
+        // Update landing timer if present
+        if (entity.userData.landingTimer > 0) {
+            entity.userData.landingTimer--;
+        }
     
         this.checkGroundCollision(entity);
         const bouncedOnMushroom = this.checkSpecialPlatformCollisions(entity);
@@ -36,17 +41,15 @@ export class CollisionSystem {
         this.checkBoundaryCollisions(entity);
         this.checkEntityCollisions(entity);
     
+        // Track max height for future use
         if (entity.userData.isOnSurface) {
-            const fallDistance = entity.userData.lastHeight - entity.position.y;
-            if (entity.userData.health !== undefined) {
-                if (fallDistance > 6) {
-                    entity.userData.health -= 1;
-                }
-            }
             entity.userData.lastHeight = entity.position.y;
         } else {
             entity.userData.lastHeight = Math.max(entity.userData.lastHeight, entity.position.y);
         }
+        
+        // Store current position for next frame's trajectory checking
+        entity.userData.prevY = entity.position.y;
     }
 
     static checkGroundCollision(entity) {
@@ -64,6 +67,12 @@ export class CollisionSystem {
         const playerRadius = PLAYER_RADIUS;
         const playerBottom = entity.position.y - PLAYER_HEIGHT / 2;
         const playerTop = entity.position.y + PLAYER_HEIGHT / 2;
+        
+        // Store previous position for trajectory check - helps catch fast falls through platforms
+        if (!entity.userData.prevY) {
+            entity.userData.prevY = entity.position.y;
+        }
+        const fallingFast = entity.userData.prevY - entity.position.y > 0.5; // Moving down quickly
 
         const platforms = (window.environmentPlatforms || []).concat(
             Array.from(scene.children).filter(
@@ -82,6 +91,30 @@ export class CollisionSystem {
             const horizontallyWithinPlatform =
                 playerMaxX >= bbox.min.x && playerMinX <= bbox.max.x &&
                 playerMaxZ >= bbox.min.z && playerMinZ <= bbox.max.z;
+                
+            // Additional check for fast falls: Did we go through a platform this frame?
+            // This helps catch cases where an entity falls through a platform in one frame
+            if (fallingFast && horizontallyWithinPlatform) {
+                const prevBottom = entity.userData.prevY - PLAYER_HEIGHT / 2;
+                const passThroughPlatform = 
+                    prevBottom >= bbox.max.y && // Was above platform in previous frame
+                    playerBottom <= bbox.max.y; // Is below platform top now
+                    
+                if (passThroughPlatform) {
+                    // We fell through a platform - snap back to platform top
+                    entity.position.y = bbox.max.y + PLAYER_HEIGHT / 2;
+                    if (entity.userData.velocity) {
+                        entity.userData.velocity.y = 0;
+                    }
+                    entity.userData.isOnSurface = true;
+                    entity.userData.currentPlatform = platform;
+                    entity.userData.justLanded = true;
+                    entity.userData.landingTimer = 15; // Extra stabilization time
+                    // Store updated position for next frame
+                    entity.userData.prevY = entity.position.y;
+                    return; // Exit immediately after fixing the fall-through
+                }
+            }
 
             // Moved balloon check inside the loop
             const balloonCount = entity.userData.balloons?.length || 0;
@@ -96,11 +129,17 @@ export class CollisionSystem {
                 landingTolerance *= 1.0; // Minimal tolerance - similar to platformer
             }
 
+            // First check: If we're above a platform and falling or very close to landing
             if (horizontallyWithinPlatform &&
                 playerBottom <= bbox.max.y + landingTolerance &&
                 playerBottom >= bbox.max.y - 0.5 &&
                 entity.userData.velocity && 
-                (entity.userData.velocity.y <= 0.01 || balloonCount === 1)) { // Allow landing with more velocity when only 1 balloon
+                // Either falling or close to the platform and barely moving
+                (entity.userData.velocity.y < 0 || 
+                 (Math.abs(entity.userData.velocity.y) <= 0.03 && 
+                  Math.abs(playerBottom - bbox.max.y) < 0.15))) {
+                
+                // Land on the platform
                 entity.position.y = bbox.max.y + PLAYER_HEIGHT / 2;
                 if (entity.userData.velocity) {
                     entity.userData.velocity.y = 0;
@@ -108,14 +147,35 @@ export class CollisionSystem {
                 entity.userData.isOnSurface = true;
                 entity.userData.currentPlatform = platform;
                 entity.userData.justLanded = true; // Set flag for entity collision
+                entity.userData.landingTimer = 10; // Give a few frames to stabilize on the platform
                 continue;
             }
 
             if (horizontallyWithinPlatform && playerTop >= bbox.min.y && playerBottom <= bbox.max.y) {
+                // Check if we're falling onto this platform - prioritize landing on top
                 if (
+                    entity.userData.velocity && 
+                    entity.userData.velocity.y < 0 && // Falling downward
+                    playerBottom <= bbox.max.y + landingTolerance && // Close to platform top
+                    playerBottom >= bbox.max.y - 0.5 // Not too far beneath
+                ) {
+                    // Land on the platform
+                    entity.position.y = bbox.max.y + PLAYER_HEIGHT / 2;
+                    if (entity.userData.velocity) {
+                        entity.userData.velocity.y = 0;
+                    }
+                    entity.userData.isOnSurface = true;
+                    entity.userData.currentPlatform = platform;
+                    entity.userData.justLanded = true;
+                    entity.userData.landingTimer = 10; // Give a few frames to stabilize
+                    continue;
+                }
+                
+                // Still handle the case when we're already near the top but not falling
+                else if (
                     playerBottom <= bbox.max.y + PLATFORM_COLLISION_MARGIN &&
                     playerBottom >= bbox.max.y - 0.5 &&
-                    entity.userData.velocity && entity.userData.velocity.y <= 0.01
+                    entity.userData.velocity && Math.abs(entity.userData.velocity.y) <= 0.02
                 ) {
                     entity.position.y = bbox.max.y + PLAYER_HEIGHT / 2;
                     if (entity.userData.velocity) {
@@ -123,9 +183,12 @@ export class CollisionSystem {
                     }
                     entity.userData.isOnSurface = true;
                     entity.userData.currentPlatform = platform;
+                    entity.userData.justLanded = true;
+                    entity.userData.landingTimer = 10; // Give a few frames to stabilize
                     continue;
                 }
 
+                // Handle hitting the bottom of the platform while jumping up
                 if (
                     playerTop >= bbox.min.y - PLATFORM_COLLISION_MARGIN &&
                     playerTop <= bbox.min.y + 0.1 &&
@@ -138,25 +201,41 @@ export class CollisionSystem {
                     continue;
                 }
 
-                const penRight = bbox.max.x - playerMinX;
-                const penLeft = playerMaxX - bbox.min.x;
-                const penFront = bbox.max.z - playerMinZ;
-                const penBack = playerMaxZ - bbox.min.z;
-
-                const minPen = Math.min(penRight, penLeft, penFront, penBack);
-
-                if (minPen === penRight) {
-                    entity.position.x = bbox.max.x + playerRadius;
-                    if (entity.userData.velocity) entity.userData.velocity.x = 0;
-                } else if (minPen === penLeft) {
-                    entity.position.x = bbox.min.x - playerRadius;
-                    if (entity.userData.velocity) entity.userData.velocity.x = 0;
-                } else if (minPen === penFront) {
-                    entity.position.z = bbox.max.z + playerRadius;
-                    if (entity.userData.velocity) entity.userData.velocity.z = 0;
-                } else if (minPen === penBack) {
-                    entity.position.z = bbox.min.z - playerRadius;
-                    if (entity.userData.velocity) entity.userData.velocity.z = 0;
+                // Only push horizontally if we're not in the process of landing
+                // or if we're very far from the top or bottom
+                const farFromTop = playerBottom < bbox.max.y - 0.5;
+                const farFromBottom = playerTop > bbox.min.y + 0.5;
+                
+                // Skip horizontal collision during landing grace period
+                if (entity.userData.landingTimer > 0) {
+                    continue;
+                }
+                
+                // If we're in the middle of the platform (far from top and bottom),
+                // or not moving much vertically, push horizontally
+                if ((farFromTop && farFromBottom) || 
+                    (entity.userData.velocity && Math.abs(entity.userData.velocity.y) < 0.01)) {
+                    
+                    const penRight = bbox.max.x - playerMinX;
+                    const penLeft = playerMaxX - bbox.min.x;
+                    const penFront = bbox.max.z - playerMinZ;
+                    const penBack = playerMaxZ - bbox.min.z;
+    
+                    const minPen = Math.min(penRight, penLeft, penFront, penBack);
+    
+                    if (minPen === penRight) {
+                        entity.position.x = bbox.max.x + playerRadius;
+                        if (entity.userData.velocity) entity.userData.velocity.x = 0;
+                    } else if (minPen === penLeft) {
+                        entity.position.x = bbox.min.x - playerRadius;
+                        if (entity.userData.velocity) entity.userData.velocity.x = 0;
+                    } else if (minPen === penFront) {
+                        entity.position.z = bbox.max.z + playerRadius;
+                        if (entity.userData.velocity) entity.userData.velocity.z = 0;
+                    } else if (minPen === penBack) {
+                        entity.position.z = bbox.min.z - playerRadius;
+                        if (entity.userData.velocity) entity.userData.velocity.z = 0;
+                    }
                 }
             }
         }
@@ -182,18 +261,28 @@ export class CollisionSystem {
             if (horizontalDistSquared < mushroomCapRadius * mushroomCapRadius) {
                 const mushroomTopY = mushroom.position.y + stemHeight + 0.2;
                 
-                if (playerBottom <= mushroomTopY + 0.5 && 
-                    playerBottom >= mushroomTopY - 0.5 && 
-                    entity.userData.velocity.y <= 0) {
+                // Adjusted collision detection to work better with water
+                // Extended collision area and removed velocity requirement when in water
+                const inWaterExtension = entity.userData.isInWater ? 2.0 : 0.5;
+                
+                if (playerBottom <= mushroomTopY + inWaterExtension && 
+                    playerBottom >= mushroomTopY - inWaterExtension && 
+                    (entity.userData.isInWater || entity.userData.velocity.y <= 0)) {
                     
-                    entity.userData.velocity.y = mushroom.userData.boostForce;
+                    // Apply a stronger boost if in water
+                    const boostMultiplier = entity.userData.isInWater ? 1.3 : 1.0;
+                    entity.userData.velocity.y = mushroom.userData.boostForce * boostMultiplier;
                     
+                    // Trigger bounce animation
                     if (typeof triggerMushroomBounce === 'function') {
                         triggerMushroomBounce(mushroom);
                     } else if (!mushroom.userData.animating) {
                         mushroom.userData.animating = true;
                         mushroom.userData.animationTime = 0;
                     }
+                    
+                    // Also make sure any water flag is cleared as player bounces up
+                    entity.userData.isInWater = false;
                     
                     return true;
                 }
@@ -207,15 +296,12 @@ export class CollisionSystem {
         if (!entity || !entity.position || !entity.userData) return;
         
         const waterSurfaceHeight = WATER_LEVEL + PLAYER_HEIGHT * 0.2;
-        if (entity.position.z > 0 && entity.position.y < waterSurfaceHeight) {
-            const fallDistance = entity.userData.lastHeight - entity.position.y;
+        // Remove the z-position check to allow water anywhere on the map
+        // The z > 0 check was preventing water detection in some areas
+        if (entity.position.y < waterSurfaceHeight) {
+            // Water splash effect could be added here in the future
 
-            if (entity.userData.health !== undefined) {
-                if (fallDistance > 10) {
-                    entity.userData.health -= 1;
-                }
-            }
-
+            // Ensure the entity doesn't sink too deep into the water
             entity.position.y = Math.max(
                 entity.position.y,
                 PLAYER_HEIGHT * 1.2
@@ -226,8 +312,15 @@ export class CollisionSystem {
                 entity.userData.velocity.y += 0.005;
             }
 
+            // Set both water and surface flags
             entity.userData.isInWater = true;
+            
+            // Consider the water surface as a jumpable surface
+            // This allows the player to jump when in water
+            entity.userData.isOnSurface = true;
         } else {
+            // Just update the water flag, don't change isOnSurface status
+            // to avoid conflicts with platform detection
             entity.userData.isInWater = false;
         }
     }
@@ -319,7 +412,7 @@ export class CollisionSystem {
                         entity.userData.velocity.y += 0.02;
                     }
                 }
+                }
             }
         }
     }
-}
