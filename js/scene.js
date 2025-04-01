@@ -61,8 +61,9 @@ export function initScene() {
     const skybox = new THREE.Mesh(skyGeometry, skyMaterial);
     scene.add(skybox);
 
-    // Add fog for depth (already present, just confirming)
-    scene.fog = new THREE.Fog(0x87CEEB, 50, 500);
+    // Add exponential fog for a smoother blend
+    // scene.fog = new THREE.Fog(0x87CEEB, 50, 500); // Linear fog (original)
+    scene.fog = new THREE.FogExp2(0xE6F0FA, 0.004); // Exponential fog, matching bottom sky, adjust density as needed
 
     // Set up camera
     camera = new THREE.PerspectiveCamera(

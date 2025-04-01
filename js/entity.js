@@ -1,7 +1,7 @@
 // entity.js - Specialized character classes for Player and NPCs
 import * as THREE from 'three';
 import { scene } from './scene.js';
-import { platforms } from './environment.js';
+import { allPlatforms } from './environment.js'; // Corrected import name
 import { Character, allCharacters } from './character.js';
 import { GROUND_LEVEL, PLAYER_HEIGHT, PLAYER_RADIUS, WATER_LEVEL } from './constants.js';
 
@@ -85,8 +85,8 @@ export function initPlayer() {
   playerBody.userData.id = player.userData.id;
   player.addBalloons(3, [0xff0000, 0x0000ff, 0x00ff00]);
   balloons = player.balloons;
-  if (platforms.length > 0) {
-    const startPlatform = platforms[0];
+  if (allPlatforms.length > 0) { // Corrected variable name
+    const startPlatform = allPlatforms[0]; // Corrected variable name
     playerBody.position.x = startPlatform.position.x;
     playerBody.position.y = startPlatform.position.y + 0.5;
     playerBody.position.z = startPlatform.position.z;
@@ -173,16 +173,16 @@ export const npcs = [];
 
 export function initNPCs() {
   console.log("Initializing NPCs");
-  if (platforms.length > 0) {
-    const npc1 = createNPC(platforms[0].position.x, platforms[0].position.y + 1, platforms[0].position.z, 0xff0000, platforms[0], "NPC1");
+  if (allPlatforms.length > 0) { // Corrected variable name
+    const npc1 = createNPC(allPlatforms[0].position.x, allPlatforms[0].position.y + 1, allPlatforms[0].position.z, 0xff0000, allPlatforms[0], "NPC1"); // Corrected variable name
     console.log("Created NPC 1:", npc1);
   }
-  if (platforms.length > 2) {
-    const npc2 = createNPC(platforms[2].position.x, platforms[2].position.y + 1, platforms[2].position.z, 0x00ff00, platforms[2], "NPC2");
+  if (allPlatforms.length > 2) { // Corrected variable name
+    const npc2 = createNPC(allPlatforms[2].position.x, allPlatforms[2].position.y + 1, allPlatforms[2].position.z, 0x00ff00, allPlatforms[2], "NPC2"); // Corrected variable name
     console.log("Created NPC 2:", npc2);
   }
-  if (platforms.length > 4) {
-    const npc3 = createNPC(platforms[4].position.x, platforms[4].position.y + 1, platforms[4].position.z, 0x0000ff, platforms[4], "NPC3");
+  if (allPlatforms.length > 4) { // Corrected variable name
+    const npc3 = createNPC(allPlatforms[4].position.x, allPlatforms[4].position.y + 1, allPlatforms[4].position.z, 0x0000ff, allPlatforms[4], "NPC3"); // Corrected variable name
     console.log("Created NPC 3:", npc3);
   }
   console.log("NPCs initialized, total characters:", allCharacters.length);
@@ -204,9 +204,9 @@ export function updateNPCs() {
 }
 
 export function respawnNPC() {
-  if (platforms.length > 0) {
-    const platformIndex = Math.floor(Math.random() * platforms.length);
-    const platform = platforms[platformIndex];
+  if (allPlatforms.length > 0) { // Corrected variable name
+    const platformIndex = Math.floor(Math.random() * allPlatforms.length); // Corrected variable name
+    const platform = allPlatforms[platformIndex]; // Corrected variable name
     return createNPC(
       platform.position.x,
       platform.position.y + 1,

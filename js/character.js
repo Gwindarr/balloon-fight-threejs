@@ -582,18 +582,13 @@ export function checkBalloonCollisions() {
 
             // Pop the balloon if conditions are met
             if (shouldPop) {
-              const charAttacker = allCharacters[i];
-              const charVictim = allCharacters[j];
+              const charAttacker = allCharacters[i]; // Gets Character class instance
+              const charVictim = allCharacters[j];   // Gets Character class instance
+              // Call popBalloon on the victim's Character instance
+              // The network message is already sent earlier if shouldPop is true for a player
               if (charVictim.popBalloon(targetBalloon)) {
-                // Send network event through multiplayer system
-                if (attacker.userData.isLocalPlayer && window.multiplayerSocket && window.multiplayerSocket.readyState === WebSocket.OPEN) {
-                  window.socket.send(JSON.stringify({
-                    type: 'balloon_pop',
-                    attackerId: attacker.userData.id,
-                    victimId: victim.userData.id,
-                    balloonIndex: k
-                  }));
-                }
+                // Removed redundant network message send block
+
                 // Medium upward boost to attacker when popping
                 attacker.userData.velocity.y = Math.max(attacker.userData.velocity.y, 0.15);
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
-import { movingPlatforms, cloudPlatforms, boost_mushrooms } from './environment.js';
+import { movingPlatforms, cloudPlatforms } from './environment.js';
 
 let socket;
 let environmentSyncInterval;
@@ -34,7 +34,7 @@ function startEnvironmentSync() {
     // Set up new interval
     environmentSyncInterval = setInterval(() => {
         syncMovingPlatforms();
-        syncBoostMushrooms();
+        // Removed syncBoostMushrooms() call
         syncCloudPlatforms();
     }, SYNC_INTERVAL);
 }
@@ -51,9 +51,7 @@ function addEnvironmentUpdateListener() {
             case 'platform_cloud':
                 updateCloudPlatform(state);
                 break;
-            case 'boost_mushroom':
-                updateBoostMushroom(state);
-                break;
+            // Removed boost_mushroom case
         }
     };
 }
@@ -204,44 +202,8 @@ function updateCloudPlatform(state) {
     }
 }
 
-// Sync boost mushrooms (especially when activated)
-function syncBoostMushrooms() {
-    // No need for regular syncing as mushrooms are only synced when activated
-    // This is handled by the player when they bounce on a mushroom
-}
-
-// Update a boost mushroom based on received data
-function updateBoostMushroom(state) {
-    if (!boost_mushrooms) return;
-    
-    // If the mushroom was activated, find the closest one to the position
-    if (state.activated && state.position) {
-        const position = new THREE.Vector3(
-            state.position.x,
-            state.position.y,
-            state.position.z
-        );
-        
-        // Find the closest mushroom
-        let closestMushroom = null;
-        let closestDistance = Infinity;
-        
-        for (const mushroom of boost_mushrooms) {
-            const distance = mushroom.position.distanceTo(position);
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                closestMushroom = mushroom;
-            }
-        }
-        
-        // If we found a close mushroom, trigger its animation
-        if (closestMushroom && closestDistance < 5) {
-            import('./environment.js').then(({ triggerMushroomBounce }) => {
-                triggerMushroomBounce(closestMushroom);
-            });
-        }
-    }
-}
+// Removed syncBoostMushrooms function
+// Removed updateBoostMushroom function
 
 // Check if the local player is the host (first connected player)
 function isHost() {

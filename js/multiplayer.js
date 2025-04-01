@@ -146,6 +146,10 @@ function handleServerMessage(message, localPlayer) {
             // Handle chat messages
             displayChatMessage(message.playerId, message.message);
             break;
+        case 'balloon_pop':
+             // Handle balloon pop event initiated by another player
+             handleBalloonPop(message.victimId, message.balloonIndex);
+             break;
     }
 }
 
@@ -365,6 +369,29 @@ function handleEnvironmentUpdate(target, state) {
     
     // TODO: Handle other environment updates as needed
 }
+
+// Handle received balloon pop message
+function handleBalloonPop(victimId, balloonIndex) {
+    console.log(`Received balloon pop event for victim: ${victimId}, balloon index: ${balloonIndex}`);
+    const victimMesh = players.get(victimId); // Find the victim's mesh in the map
+
+    if (victimMesh && victimMesh.userData && victimMesh.userData.characterInstance) {
+        const victimCharacter = victimMesh.userData.characterInstance; // Get the Character instance
+
+        // Ensure the balloon index is valid
+        if (balloonIndex >= 0 && balloonIndex < victimCharacter.balloons.length) {
+            const balloonToPop = victimCharacter.balloons[balloonIndex];
+            console.log(`Popping balloon ${balloonIndex} for player ${victimId}`);
+            victimCharacter.popBalloon(balloonToPop); // Call the pop method
+        } else {
+            console.warn(`Invalid balloon index ${balloonIndex} received for victim ${victimId}. Current balloons: ${victimCharacter.balloons.length}`);
+            // Optional: Request full state update if indices seem wrong
+        }
+    } else {
+        console.warn(`Could not find victim character with ID ${victimId} to pop balloon.`);
+    }
+}
+
 
 // Display chat messages (simplified)
 function displayChatMessage(id, text) {

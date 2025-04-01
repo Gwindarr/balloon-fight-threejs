@@ -37,12 +37,7 @@ export const BALLOON_AIR_CONTROL = 0.85;           // Air control in balloon mod
 // Collision constants
 export const BALLOON_RADIUS = 0.6;                 // Size of balloon hitbox
 
-// Mushroom constants
-export const MUSHROOM_STEM_HEIGHT = 2.0;           // Height of mushroom stem
-export const MUSHROOM_STEM_RADIUS_TOP = 1.2;       // Top radius of stem
-export const MUSHROOM_STEM_RADIUS_BOTTOM = 1.8;    // Bottom radius of stem
-export const MUSHROOM_CAP_RADIUS = 4.0;            // Radius of mushroom cap
-export const MUSHROOM_BOOST_FORCE = 1.0;            // Upward force when bouncing on mushroom
+// Removed Mushroom constants
 
 // Collision system constants
 export const GROUND_LEVEL = 0;
